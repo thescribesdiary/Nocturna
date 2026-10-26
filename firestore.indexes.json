@@ -1,0 +1,9 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "scuola", "fieldPath": "notifyAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }] },
+    { "collectionGroup": "lavoro", "fieldPath": "notifyAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }] },
+    { "collectionGroup": "lettura", "fieldPath": "notifyAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }] },
+    { "collectionGroup": "scrittura", "fieldPath": "notifyAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }] }
+  ]
+}
