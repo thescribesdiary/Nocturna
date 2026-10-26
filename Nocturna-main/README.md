@@ -92,7 +92,7 @@ Segui i passi nell'ordine.
 | --- | --- |
 | `FIREBASE_CONFIG` | Il blocco `firebaseConfig` del passo 2. Va bene anche incollarlo tutto, da `const firebaseConfig = {` fino a `};`. |
 | `FIREBASE_SERVICE_ACCOUNT` | Tutto il contenuto del file `.json` del passo 5. Vedi sotto come copiarlo. |
-| `ALLOWED_EMAIL` | L'indirizzo Google che userai per entrare in Nocturna. Nessun altro account potrà accedere. |
+| `ALLOWED_EMAIL` | L'indirizzo Google che userai per entrare in Nocturna. Puoi metterne anche due (o più) separati da una virgola, per esempio `primo@gmail.com, secondo@gmail.com`: tutti gli account vedono e modificano gli stessi dati. Nessun altro account potrà accedere. |
 
 **Come copiare il contenuto del file `.json`**
 
@@ -195,7 +195,7 @@ Se una fase modifica anche il file `deploy.yml`, te lo dirò e andrà aggiornato
 - **Errore che dice che un'API non è attiva** (*API has not been used* o *is disabled*). Apri il link contenuto nell'errore, clicca **Abilita**, aspetta un paio di minuti e poi **Re-run jobs**.
 - **Errore su `FIREBASE_CONFIG`.** Ricopia il blocco `firebaseConfig` per intero nel secret.
 - **Le notifiche non arrivano.** Controlla in **Actions → Promemoria Nocturna** che le esecuzioni siano verdi e che il dispositivo risulti attivo in Impostazioni. Se l'errore parla di *Cloud Messaging* o *FCM*, apri il link contenuto nell'errore e abilita l'API.
-- **«Account non autorizzato» all'accesso.** Hai scelto un account Google diverso da quello scritto nel secret `ALLOWED_EMAIL`.
+- **«Account non autorizzato» all'accesso.** Hai scelto un account Google che non è scritto nel secret `ALLOWED_EMAIL`. Per aggiungerne uno: GitHub → Settings → Secrets and variables → Actions → `ALLOWED_EMAIL` → Update, scrivi gli indirizzi separati da virgola e poi rilancia la pubblicazione da Actions.
 
 ---
 
@@ -210,7 +210,7 @@ Tutti i dati stanno in un unico database Firestore, in `users/{tuo-id}/{sezione}
 - `impostazioni`: preferenze, profilo e colonne delle bacheche.
 - `dispositivi`: i telefoni e i computer abilitati alle notifiche.
 
-Le regole di sicurezza permettono di leggere e scrivere solo i propri dati, e solo all'account indicato in `ALLOWED_EMAIL`. Gli elementi eliminati restano nel Cestino finché non li elimini definitivamente.
+Le regole di sicurezza permettono di leggere e scrivere i dati solo agli account indicati in `ALLOWED_EMAIL`. I dati stanno in uno spazio condiviso (`users/condiviso`): dalla versione 2.1, al primo accesso di ogni account i dati che aveva nelle versioni precedenti vengono copiati lì una volta sola, senza cancellare l'originale. Gli elementi eliminati restano nel Cestino finché non li elimini definitivamente.
 
 ## Per chi sviluppa
 

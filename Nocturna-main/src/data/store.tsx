@@ -7,6 +7,7 @@ import {
 import { db } from '../firebase';
 import { ColsConfig, ORDER, Rec, Section } from './sections';
 import { notifyFields, touchesReminders } from './reminders';
+import { LetturaCfg, letturaCfg, setLetturaCfg } from './schema';
 
 export type Theme = 'scuro' | 'contrasto' | 'chiaro';
 export type Prefs = { theme: Theme; summaryOnOpen: boolean; lessonsOnHome: boolean; autoTrash: boolean };
@@ -41,6 +42,9 @@ export type Store = {
   setPrefs: (p: Partial<Prefs>) => void;
   setProfile: (p: Partial<Profile>) => void;
   setCols: (s: Section, cols: ColsConfig[Section]) => void;
+  /** Tipi di attività e canali di Lettura (modificabili da Impostazioni). */
+  lcfg: LetturaCfg;
+  setLcfg: (c: LetturaCfg) => void;
   toast: string;
   toastUndo: (() => void) | null;
   say: (msg: string, undo?: () => void) => void;
@@ -118,6 +122,9 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
   const profile: Profile = { name: '', bio: '', avatar: '', ...(settings.profilo || {}) };
   const cols: ColsConfig = settings.colonne || {};
   colsRef.current = cols;
+  // I moduli leggono tipi e canali di Lettura dal registro dello schema: lo aggiorniamo qui.
+  setLetturaCfg(settings.lettura);
+  const lcfg = letturaCfg();
 
   useEffect(() => {
     try { localStorage.setItem(THEME_KEY, prefs.theme); } catch {}
@@ -186,6 +193,7 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
     setDoc(doc(db, 'users', uid, 'impostazioni', id), { ...patch, updatedAt: serverTimestamp() }, { merge: true }).catch(fail);
   const setPrefs = (p: Partial<Prefs>) => { setSetting('preferenze', p); };
   const setProfile = (p: Partial<Profile>) => { setSetting('profilo', p); };
+  const setLcfg: Store['setLcfg'] = (c) => { setSetting('lettura', { types: c.types, channels: c.channels }); };
   const setCols: Store['setCols'] = (s, c) => {
     setDoc(doc(db, 'users', uid, 'impostazioni', 'colonne'), { [s]: c, updatedAt: serverTimestamp() }, { merge: true }).catch(fail);
   };
@@ -209,7 +217,7 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
 
   const value: Store = {
     uid, ready, docs, trash, prefs, profile, cols, sync,
-    newId, create, update, trashIt, removeRec, restore, destroy, emptyTrash, setPrefs, setProfile, setCols,
+    newId, create, update, trashIt, removeRec, restore, destroy, emptyTrash, setPrefs, setProfile, setCols, lcfg, setLcfg,
     toast, toastUndo, say,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

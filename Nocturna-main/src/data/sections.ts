@@ -1,4 +1,5 @@
 // Le quattro aree di Nocturna, con colonne, colori e le regole dei prototipi.
+import { lTypeColor } from './schema';
 export type Section = 'scuola' | 'lavoro' | 'lettura' | 'scrittura';
 export const ORDER: Section[] = ['scuola', 'lavoro', 'lettura', 'scrittura'];
 
@@ -106,6 +107,10 @@ export type HomeTask = {
   urgent: boolean;
   repeat: string;
   done: boolean;
+  /** Testo al posto dello stato (es. per le scadenze di lettura dei libri). */
+  label?: string;
+  /** Colore del tipo di attività (Lettura), usato dai pallini del calendario della sezione. */
+  dot?: string;
 };
 
 /** La data che un'attività mostra nel calendario (regole dei prototipi). */
@@ -127,6 +132,7 @@ export const toHome = (c: Section, x: Rec, cfg?: ColsConfig): HomeTask => ({
   urgent: urgentOf(c, x),
   repeat: x.repeat || '',
   done: isDone(cfg, c, x.status),
+  dot: c === 'lettura' ? lTypeColor(x.type) : undefined,
 });
 
 /** Traduce una modifica fatta in Home nei campi del documento d'origine. */

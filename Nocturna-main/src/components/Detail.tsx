@@ -3,7 +3,7 @@ import { GG, P, fmtS } from '../lib/dates';
 import { CATS, Rec, Section, catVar, dateOf, isDone, statusLabel, visibleCols, toneColor } from '../data/sections';
 import { useStore } from '../data/store';
 import { useTaskActions } from '../data/actions';
-import { Field, KindDef, Opt, getP, refOf, typeOf, A_COLORS } from '../data/schema';
+import { Field, KindDef, Opt, getP, refOf, typeOf, lTypeColor } from '../data/schema';
 import { pill } from './ui';
 import { Corners } from './Ornaments';
 
@@ -55,7 +55,7 @@ export function FieldList({ def, rec, skip = [] }: { def: KindDef; rec: Rec; ski
       else if (fl.t === 'rating') out = '★'.repeat(v) + '☆'.repeat(5 - v);
       else if (fl.t === 'image') return;
       if (out === '' || out == null) return;
-      rows.push([fl.t === 'bool' ? fl.label : fl.label.replace(/ \(facoltativ[ao]\)/, ''), fl.t === 'bool' ? '' : out]);
+      rows.push([fl.t === 'bool' ? fl.label.replace(/ \(.*\)$/, '') : (fl.labelFn ? fl.labelFn(rec) : fl.label).replace(/ \(facoltativ[ao]\)/, ''), fl.t === 'bool' ? '' : out]);
     });
   });
   if (!rows.length) return null;
@@ -107,7 +107,7 @@ export function cardInfo(c: Section, x: Rec, docs: Record<Section, Rec[]>, cols:
   if (c === 'lavoro' && x.blocked) badges.push('Bloccata');
   if (x.repeat) badges.push('Ricorrente');
   const dateLabel = date ? fmtS(date) + (x.time ? ' · ' + x.time : '') : 'Senza data';
-  return { title: x.title || '', typeLabel: t[1].replace(/ \(.*\)/, ''), icon: t[2] || 'ph-dots-three-circle', typeColor: c === 'lettura' ? A_COLORS[x.type] : undefined, ref: refOf(c, x, docs), dateLabel: c === 'scuola' && !x.date && x.due ? 'Scadenza ' + fmtS(x.due) : dateLabel, flag, done, badges };
+  return { title: x.title || '', typeLabel: t[1].replace(/ \(.*\)/, ''), icon: t[2] || 'ph-dots-three-circle', typeColor: c === 'lettura' ? lTypeColor(x.type) : undefined, ref: refOf(c, x, docs), dateLabel: c === 'scuola' && !x.date && x.due ? 'Scadenza ' + fmtS(x.due) : dateLabel, flag, done, badges };
 }
 
 /** Scheda di un'attività (bacheche, elenchi, dettagli). */

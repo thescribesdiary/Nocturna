@@ -15,6 +15,8 @@ export type Field = {
   /** Per le immagini: larghezza massima in px (copertine 240, ispirazione 1200). */
   w?: number;
   icon?: string;
+  /** Etichetta che dipende da altri campi (es. «Referente del review party»). */
+  labelFn?: (r: Rec) => string;
 };
 export type Group = { title?: string; adv?: boolean; show?: (r: Rec) => boolean; fields: Field[] };
 export type KindDef = {
@@ -62,7 +64,28 @@ export const READER: Opt[] = [['me', 'Letto da me', 'ph-user'], ['delegato', 'Te
 const DLMODE: Opt[] = [['data', 'Data precisa', 'ph-calendar-check'], ['mese', 'Entro un mese', 'ph-calendar-dots'], ['nessuna', 'Nessuna scadenza', 'ph-minus-circle']];
 export const CHANNELS: Opt[] = [['blog', 'Blog', 'ph-globe'], ['instagram', 'Instagram', 'ph-instagram-logo'], ['goodreads', 'Goodreads', 'ph-books']];
 export const REMIND: Opt[] = [['', 'Nessun avviso'], ['0', 'Il giorno stesso'], ['1', '1 giorno prima'], ['3', '3 giorni prima'], ['7', '1 settimana prima']];
-const books = ref('lettura', 'libro');
+const books = ref('lettura', 'libro', 'title', (x) => !x.volDone && !x.volCancelled);
+
+// Tipi di attività e canali del piano editoriale: modificabili da Impostazioni (documento impostazioni/lettura).
+export type LType = { id: string; label: string; icon: string; color: string };
+export type LChan = { id: string; label: string; icon: string };
+export type LetturaCfg = { types: LType[]; channels: LChan[] };
+export const DEFAULT_LCFG: LetturaCfg = {
+  types: A_TYPES.map(([id, label, icon]) => ({ id, label, icon: icon || 'ph-bookmark-simple', color: A_COLORS[id] || '#93878a' })),
+  channels: CHANNELS.map(([id, label, icon]) => ({ id, label, icon: icon || 'ph-hash' })),
+};
+let LCFG: LetturaCfg = DEFAULT_LCFG;
+/** Chiamata dall'archivio quando cambiano le impostazioni di Lettura. */
+export const setLetturaCfg = (c?: Partial<LetturaCfg> | null) => {
+  LCFG = { types: c?.types?.length ? c.types : DEFAULT_LCFG.types, channels: c?.channels?.length ? c.channels : DEFAULT_LCFG.channels };
+};
+export const letturaCfg = () => LCFG;
+export const lTypes = (): Opt[] => LCFG.types.map((t) => [t.id, t.label, t.icon] as Opt);
+export const lChannels = (): Opt[] => LCFG.channels.map((t) => [t.id, t.label, t.icon] as Opt);
+export const lTypeColor = (id?: string) => LCFG.types.find((t) => t.id === id)?.color || '#93878a';
+export const lChannelLabel = (id: string) => LCFG.channels.find((t) => t.id === id)?.label || id;
+/** Un libro chiuso (volume completato o annullato) sparisce da panoramica, calendari e promemoria. */
+export const bookClosed = (b: Rec) => !!(b.volDone || b.volCancelled);
 
 // ── SCRITTURA ──────────────────────────────────────────────────────────
 export const W_TYPES: Opt[] = [['storia', 'Scrittura di una storia', 'ph-feather'], ['capitolo', 'Capitolo', 'ph-file-text'], ['revisione', 'Revisione', 'ph-magnifying-glass'], ['preparazione', 'Preparazione alla pubblicazione', 'ph-stack'], ['pubblicazione', 'Pubblicazione', 'ph-paper-plane-tilt'], ['promozione', 'Contenuto o promozione autoriale', 'ph-share-network'], ['corte', 'Attività della corte', 'ph-crown-simple'], ['altro', 'Altro', 'ph-dots-three-circle']];
@@ -70,8 +93,9 @@ export const PKINDS: Opt[] = ['Romanzo', 'Racconto', 'Raccolta', 'Oneshot', 'Sto
 const wprojects = ref('scrittura', 'progetto');
 export const W_PSTAT: Opt[] = [['idea', 'Da ideare', '#857a7d'], ['scrittura', 'In scrittura', '#a98ad6'], ['revisione', 'In revisione', '#c2925f'], ['pronto', 'Pronto per pubblicazione', '#e0c08a'], ['pubblicato', 'Pubblicato', '#86a58f'], ['pausa', 'In pausa', '#6f6669']];
 
-export const TYPES: Record<Section, Opt[]> = { scuola: S_TYPES, lavoro: L_TYPES, lettura: A_TYPES, scrittura: W_TYPES };
-export const typeOf = (c: Section, t?: string) => TYPES[c].find((x) => x[0] === t) || TYPES[c][TYPES[c].length - 1];
+const TYPES: Record<Section, () => Opt[]> = { scuola: () => S_TYPES, lavoro: () => L_TYPES, lettura: lTypes, scrittura: () => W_TYPES };
+export const typesOf = (c: Section) => TYPES[c]();
+export const typeOf = (c: Section, t?: string): Opt => { const l = TYPES[c](); return l.find((x) => x[0] === t) || l.find((x) => x[0] === 'altro') || ['altro', 'Altro', 'ph-dots-three-circle']; };
 
 const when: Field[] = [
   { k: 'date', label: 'Data', t: 'date', half: true },
@@ -217,41 +241,43 @@ export const KINDS: Record<string, KindDef> = {
   'lettura/libro': {
     section: 'lettura', kind: 'libro', noun: 'libro', newLabel: 'Nuovo libro', editLabel: 'Modifica libro', titleKey: 'title',
     required: [['title', 'Il titolo è obbligatorio.'], ['author', "L'autore è obbligatorio."], ['publisher', "L'editore è obbligatorio."], ['format', 'Scegli il formato.']],
-    blank: { title: '', author: '', publisher: '', cover: '', status: 'daleggere', genre: '', format: '', ebookWhere: '', pages: '', added: '', received: '', start: '', end: '', rating: 0, notes: '', tbr: false, collabType: 'nessuna', collabName: '', collabNotes: '', priority: 'media', reviewStatus: 'darecensire', reviewUrl: '', reader: 'me', delegate: '', deadlineMode: 'nessuna', deadline: '', deadlineMonth: '' },
+    blank: { title: '', author: '', publisher: '', cover: '', status: 'daleggere', genre: '', format: '', ebookWhere: '', pages: '', added: '', received: '', start: '', end: '', rating: 0, notes: '', tbr: false, collabType: 'nessuna', collabName: '', collabNotes: '', priority: 'media', reviewStatus: 'darecensire', reviewUrl: '', reader: 'me', delegate: '', deadlineMode: 'nessuna', deadline: '', deadlineMonth: '', volDone: false, volCancelled: false },
     groups: [
       { fields: [
         { k: 'cover', label: 'Copertina (facoltativa)', t: 'image' },
-        { k: 'title', label: 'Titolo', t: 'text' },
+        { k: 'title', label: 'Titolo del libro', t: 'text' },
         { k: 'author', label: 'Autore', t: 'text', half: true },
         { k: 'publisher', label: 'Editore', t: 'text', half: true },
-        { k: 'format', label: 'Formato', t: 'choice', opts: FORMATS },
-        { k: 'ebookWhere', label: 'Dove si trova (Kindle, NetGalley…)', t: 'text', show: is('format', 'digitale') },
-        { k: 'status', label: 'Stato di lettura', t: 'choice', opts: BST },
+        { k: 'format', label: 'Formato di ricezione', t: 'choice', opts: FORMATS },
+        { k: 'ebookWhere', label: 'Posizione ebook o note sul digitale', t: 'text', ph: 'Es. Kindle, Kobo, NetGalley, Google Drive', show: is('format', 'digitale') },
+        { k: 'genre', label: 'Genere o categoria', t: 'text', half: true, ph: 'Es. Narrativa, Thriller' },
+        { k: 'pages', label: 'Numero di pagine', t: 'number', half: true, ph: 'Es. 320' },
+        { k: 'added', label: 'Data di inserimento', t: 'date', half: true },
+        { k: 'received', label: 'Data di ricezione', t: 'date', half: true, hint: 'Quando il volume è arrivato: pacco consegnato o file scaricato.' },
+        { k: 'status', label: 'Stato di lettura', t: 'choice', opts: BST, hint: '«Da non leggere» disattiva la scadenza e il promemoria di lettura.' },
         { k: 'tbr', label: 'Nella TBR', t: 'bool' },
+        { k: 'volDone', label: 'Volume completato (lo toglie da panoramica, calendari e promemoria)', t: 'bool' },
+        { k: 'volCancelled', label: 'Volume annullato (lo toglie da panoramica, calendari e promemoria)', t: 'bool' },
       ] },
       { title: 'Collaborazione', fields: [
-        { k: 'collabType', label: 'Tipo', t: 'choice', opts: COLLABS },
-        { k: 'collabName', label: 'Referente', t: 'text', show: (r) => r.collabType && r.collabType !== 'nessuna', hint: '' },
+        { k: 'collabType', label: 'Collaborazione', t: 'choice', opts: COLLABS },
+        { k: 'collabName', label: 'Referente', labelFn: (r) => COLLAB_WHO[r.collabType] || 'Referente', t: 'text', show: (r) => r.collabType && r.collabType !== 'nessuna', hint: 'Chi tiene i contatti fra te, il gruppo e la casa editrice.' },
         { k: 'collabNotes', label: 'Note sulla collaborazione', t: 'textarea', show: (r) => r.collabType && r.collabType !== 'nessuna' },
         { k: 'priority', label: 'Priorità', t: 'choice', opts: PRIO3 },
-        { k: 'reader', label: 'Chi lo legge', t: 'choice', opts: READER },
+        { k: 'reviewStatus', label: 'Stato della recensione sul blog', t: 'choice', opts: REVST },
+        { k: 'reviewUrl', label: 'Link della recensione', t: 'text', ph: 'https://ilmioblog.it/…' },
+        { k: 'reader', label: 'Chi legge il libro?', t: 'choice', opts: READER },
         { k: 'delegate', label: 'Delegato', t: 'text', show: is('reader', 'delegato') },
       ] },
-      { title: 'Scadenza di lettura', fields: [
+      { title: 'Pianificazione della scadenza di lettura', show: (r) => r.status !== 'nonleggere', fields: [
         { k: 'deadlineMode', label: 'Tipo di scadenza', t: 'choice', opts: DLMODE },
-        { k: 'deadline', label: 'Entro il', t: 'date', show: is('deadlineMode', 'data') },
-        { k: 'deadlineMonth', label: 'Entro il mese', t: 'month', show: is('deadlineMode', 'mese') },
+        { k: 'deadline', label: 'Data precisa entro cui leggerlo', t: 'date', show: is('deadlineMode', 'data'), hint: 'Ricevi un promemoria 3 giorni prima e il giorno stesso.' },
+        { k: 'deadlineMonth', label: 'Entro il mese', t: 'month', show: is('deadlineMode', 'mese'), hint: 'Compare nel riquadro «Da leggere entro il mese» del calendario.' },
       ] },
       { title: 'Altri dettagli', adv: true, fields: [
-        { k: 'genre', label: 'Genere o categoria', t: 'text', half: true },
-        { k: 'pages', label: 'Pagine', t: 'number', half: true },
-        { k: 'added', label: 'Aggiunto il', t: 'date', half: true },
-        { k: 'received', label: 'Ricevuto il', t: 'date', half: true },
         { k: 'start', label: 'Inizio lettura', t: 'date', half: true },
         { k: 'end', label: 'Fine lettura', t: 'date', half: true },
         { k: 'rating', label: 'Valutazione', t: 'rating' },
-        { k: 'reviewStatus', label: 'Recensione', t: 'choice', opts: REVST },
-        { k: 'reviewUrl', label: 'Link alla recensione', t: 'text' },
         { k: 'notes', label: 'Note personali', t: 'textarea' },
       ] },
     ],
@@ -262,10 +288,10 @@ export const KINDS: Record<string, KindDef> = {
     groups: [
       { fields: [
         { k: 'title', label: 'Titolo', t: 'text', ph: 'Es. Recensione «…»' },
-        { k: 'type', label: 'Tipologia', t: 'choice', opts: A_TYPES },
+        { k: 'type', label: 'Tipologia', t: 'choice', opts: () => lTypes() },
         { k: 'book', label: 'Libro collegato (facoltativo)', t: 'select', opts: books },
         { k: 'status', label: 'Stato', t: 'status' },
-        { k: 'channels', label: 'Canali', t: 'multi', opts: CHANNELS },
+        { k: 'channels', label: 'Canali', t: 'multi', opts: () => lChannels() },
       ] },
       { title: 'Quando', fields: [...when, { k: 'reminder', label: 'Promemoria', t: 'choice', opts: REMIND }, repeat] },
       { title: 'Collaborazione', fields: [
@@ -348,7 +374,7 @@ export const FILTERS: Record<Section, FilterDef[]> = {
     { id: 'blocked', label: 'Blocco', opts: () => [['si', 'Bloccate'], ['no', 'Non bloccate']], get: (x) => (x.blocked ? 'si' : 'no') },
   ],
   lettura: [
-    { id: 'type', label: 'Tipologia', opts: () => A_TYPES, get: (x) => x.type },
+    { id: 'type', label: 'Tipologia', opts: () => lTypes(), get: (x) => x.type },
     { id: 'book', label: 'Libro', opts: (d) => [...books(d), ['none', 'Senza libro']], get: (x) => x.book || 'none' },
   ],
   scrittura: [

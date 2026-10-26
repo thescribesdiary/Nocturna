@@ -11,15 +11,15 @@ export type Deco = HomeTask & {
   color: string; catShort: string; catLabel: string; bg: string; flag: boolean; flagLabel: string;
   deco: string; opacity: number; timeOr: string; timeShort: string; statusText: string; dateLabel: string;
 };
-export const decorate = (t: HomeTask, today: string, cols?: ColsConfig): Deco => {
+export const decorate = (t: HomeTask, today: string, cols?: ColsConfig, byType?: boolean): Deco => {
   const c = CATS[t.cat];
   const overdue = !t.done && !!t.date && t.date < today;
   const d = t.date ? P(t.date) : null;
   return {
-    ...t, color: catVar(t.cat), catShort: c.short, catLabel: c.label, bg: tint(catVar(t.cat)),
+    ...t, color: byType && t.dot ? t.dot : catVar(t.cat), catShort: c.short, catLabel: c.label, bg: tint(catVar(t.cat)),
     flag: !t.done && (t.urgent || overdue), flagLabel: overdue ? 'Scaduta' : 'Urgente',
     deco: t.done ? 'line-through' : 'none', opacity: t.done ? 0.55 : 1,
-    timeOr: t.time || 'In giornata', timeShort: t.time || '—', statusText: statusLabel(cols, t.cat, t.status),
+    timeOr: t.time || 'In giornata', timeShort: t.time || '—', statusText: t.label || statusLabel(cols, t.cat, t.status),
     dateLabel: d ? GG[d.getDay()] + ' ' + d.getDate() + ' ' + MESI[d.getMonth()].slice(0, 3) + (t.time ? ' · ' + t.time : '') : 'Senza data',
   };
 };
@@ -56,17 +56,17 @@ export function CalToolbar({ view, anchor, setView, setAnchor, today }: { view: 
 const line = 'color-mix(in srgb, var(--color-text) 8%, transparent)';
 
 /** Calendario desktop: mese, settimana o giorno. */
-export function DeskCalendar({ tasks, view, anchor, sel, today, cols, onDay, onTask, onMove }: {
-  tasks: HomeTask[]; view: CalView; anchor: string; sel?: string | null; today: string; cols?: ColsConfig;
+export function DeskCalendar({ tasks, view, anchor, sel, today, cols, onDay, onTask, onMove, byType }: {
+  tasks: HomeTask[]; view: CalView; anchor: string; sel?: string | null; today: string; cols?: ColsConfig; byType?: boolean;
   onDay: (k: string) => void; onTask: (t: HomeTask) => void; onMove?: (t: HomeTask, date: string) => void;
 }) {
   // Trascinamento di un'attività su un altro giorno (solo computer)
-  const drag = (ev: { id: string }) => (onMove && !ev.id.startsWith('lez:') ? { draggable: true, onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', ev.id); e.dataTransfer.effectAllowed = 'move'; } } : {});
+  const drag = (ev: { id: string }) => (onMove && !ev.id.startsWith('lez:') && !ev.id.startsWith('libro:') ? { draggable: true, onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', ev.id); e.dataTransfer.effectAllowed = 'move'; } } : {});
   const drop = (k: string) => (onMove ? { onDragOver: (e: React.DragEvent) => e.preventDefault(), onDrop: (e: React.DragEvent) => { e.preventDefault(); const t = tasks.find((x) => x.id === e.dataTransfer.getData('text/plain')); if (t) onMove(t, k); } } : {});
   const byDay: Record<string, HomeTask[]> = {};
   tasks.forEach((t) => { if (t.date) (byDay[t.date] = byDay[t.date] || []).push(t); });
   Object.values(byDay).forEach((a) => a.sort(sortT));
-  const items = (k: string) => (byDay[k] || []).map((t) => decorate(t, today, cols));
+  const items = (k: string) => (byDay[k] || []).map((t) => decorate(t, today, cols, byType));
   const a = P(anchor), y = a.getFullYear(), m = a.getMonth();
 
   if (view === 'mese') {
@@ -149,25 +149,29 @@ export function DeskCalendar({ tasks, view, anchor, sel, today, cols, onDay, onT
 }
 
 /** Calendario mobile: settimana o mese a puntini, più l'elenco del giorno scelto. */
-export function MobileCalendar({ tasks, view, setView, sel, setSel, today, cols, onTask }: {
-  tasks: HomeTask[]; view: CalView; setView: (v: CalView) => void; sel: string; setSel: (k: string) => void; today: string; cols?: ColsConfig; onTask: (t: HomeTask) => void;
+export function MobileCalendar({ tasks, view, setView, sel, setSel, today, cols, onTask, byType }: {
+  tasks: HomeTask[]; view: CalView; setView: (v: CalView) => void; sel: string; setSel: (k: string) => void; today: string; cols?: ColsConfig; onTask: (t: HomeTask) => void; byType?: boolean;
 }) {
   const byDay: Record<string, HomeTask[]> = {};
   tasks.forEach((t) => { if (t.date) (byDay[t.date] = byDay[t.date] || []).push(t); });
-  const items = (k: string) => (byDay[k] || []).slice().sort(sortT).map((t) => decorate(t, today, cols));
+  const items = (k: string) => (byDay[k] || []).slice().sort(sortT).map((t) => decorate(t, today, cols, byType));
   const a = P(sel);
   const day = (d: Date, inM?: boolean, month?: boolean) => {
     const k = K(d), it = items(k), on = k === sel, isT = k === today;
-    const dots = [...new Set(it.map((x) => x.color))].slice(0, 4);
+    // Un pallino per attività, fino a 3: pieno se completata, vuoto se ancora da fare. Oltre, «+N».
+    const dots = it.slice(0, 3), more = it.length - dots.length, ds = month ? 6 : 7;
     return (
       <button key={k} onClick={() => setSel(k)} aria-label={dayLong(d) + ', ' + it.length + ' attività'} aria-pressed={on} style={month
-        ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, height: 48, borderRadius: 10, border: `1px solid ${on ? 'var(--color-accent)' : 'transparent'}`, background: on ? 'color-mix(in srgb, var(--color-accent) 12%, transparent)' : isT ? 'color-mix(in srgb, var(--color-text) 6%, transparent)' : 'transparent', color: isT ? 'var(--color-accent-300)' : inM === false ? 'var(--color-neutral-600)' : 'var(--color-text)', font: 'inherit', fontSize: 15.5, cursor: 'pointer', padding: 0 }
+        ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, height: 52, borderRadius: 10, border: `1px solid ${on ? 'var(--color-accent)' : 'transparent'}`, background: on ? 'color-mix(in srgb, var(--color-accent) 12%, transparent)' : isT ? 'color-mix(in srgb, var(--color-text) 6%, transparent)' : 'transparent', color: isT ? 'var(--color-accent-300)' : inM === false ? 'var(--color-neutral-600)' : 'var(--color-text)', font: 'inherit', fontSize: 15.5, cursor: 'pointer', padding: 0 }
         : { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 66, padding: '7px 0', borderRadius: 12, border: `1px solid ${on ? 'var(--color-accent)' : 'transparent'}`, background: on ? 'color-mix(in srgb, var(--color-accent) 12%, transparent)' : isT ? 'color-mix(in srgb, var(--color-text) 6%, transparent)' : 'transparent', color: 'var(--color-text)', font: 'inherit', cursor: 'pointer' }}>
         {month ? <span>{d.getDate()}</span> : <>
           <span style={{ fontSize: 12.5, color: 'var(--color-neutral-400)', textTransform: 'uppercase', letterSpacing: '.05em' }}>{GG[d.getDay()]}</span>
           <span style={{ fontSize: 19, fontWeight: 500, color: isT ? 'var(--color-accent-300)' : 'var(--color-text)' }}>{d.getDate()}</span>
         </>}
-        <span style={{ display: 'flex', gap: month ? 2 : 3, height: month ? 5 : 6 }}>{dots.map((c) => <span key={c} style={{ width: month ? 4 : 5, height: month ? 4 : 5, borderRadius: '50%', background: c }} />)}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 2, height: ds }}>
+          {dots.map((x) => <span key={x.id} style={{ width: ds, height: ds, boxSizing: 'border-box', borderRadius: '50%', background: x.done ? x.color : 'transparent', border: '1.5px solid ' + x.color }} />)}
+          {more > 0 && <span style={{ fontSize: 10.5, lineHeight: 1, color: 'var(--color-neutral-400)', marginLeft: 1 }}>+{more}</span>}
+        </span>
       </button>
     );
   };

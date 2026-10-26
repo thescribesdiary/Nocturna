@@ -10,6 +10,7 @@ import { SectionPage } from './pages/Section';
 import { Trash } from './pages/Trash';
 import { Account } from './pages/Account';
 import { Login } from './pages/Login';
+import { SPACE, joinSpace } from './data/space';
 
 function Page({ route, mobile, go }: { route: Route; mobile: boolean; go: (r: Route) => void }) {
   switch (route) {
@@ -65,8 +66,21 @@ const Loading = () => (
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [denied, setDenied] = useState('');
+  const [joined, setJoined] = useState('');
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
+  // Prima di aprire i dati: entra nello spazio condiviso e, la prima volta, porta con sé i dati vecchi.
+  useEffect(() => {
+    if (!user) return;
+    let done = false;
+    const finish = () => { if (!done) { done = true; setJoined(user.uid); } };
+    const t = window.setTimeout(finish, 8000); // senza rete non blocchiamo l'app
+    joinSpace(user.uid).then(finish).catch((e) => {
+      if (e?.code === 'permission-denied') { setDenied(`L'account ${user.email || ''} non è autorizzato ad accedere a Nocturna.`); logout(); }
+      else { console.error(e); finish(); }
+    });
+    return () => window.clearTimeout(t);
+  }, [user]);
   // Le regole di sicurezza rifiutano gli account non autorizzati: in quel caso usciamo e lo spieghiamo.
   const onDenied = () => {
     setDenied(`L'account ${auth.currentUser?.email || ''} non è autorizzato ad accedere a Nocturna.`);
@@ -77,8 +91,10 @@ export default function App() {
     return <div data-theme={cachedTheme()} style={{ height: '100%', background: 'var(--color-bg)' }} />;
   if (!user)
     return <div data-theme={cachedTheme()} style={{ height: '100%', color: 'var(--color-text)', fontFamily: 'var(--font-body)' }}><Login error={denied} /></div>;
+  if (joined !== user.uid)
+    return <div data-theme={cachedTheme()} style={{ height: '100%', display: 'grid', placeItems: 'center', background: 'var(--color-bg)', color: 'var(--color-neutral-500)', fontFamily: 'var(--font-body)', fontSize: 15 }}>Apertura dei dati condivisi…</div>;
   return (
-    <DataProvider uid={user.uid} onDenied={onDenied}>
+    <DataProvider uid={SPACE} onDenied={onDenied}>
       <Layout />
     </DataProvider>
   );

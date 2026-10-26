@@ -2,7 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GG, MESI, P, dayLong } from '../lib/dates';
 import { CATS, HomeTask, ORDER, Section, catVar } from '../data/sections';
 import { useStore } from '../data/store';
-import { lessonTasks, tomorrowOf, useHomeTasks, useTaskEditor, useToday } from '../data/hooks';
+import { lessonTasks, tomorrowOf, useHomeTasks, useToday } from '../data/hooks';
+import { useTaskActions } from '../data/actions';
+import { useRecordEditor } from '../components/CalendarForm';
+import { bookDeadlines, monthBooks } from '../data/books';
+import { LetturaCalendarExtras } from './views';
 import { CalToolbar, CalView, DeskCalendar, MobileCalendar, decorate, sortT } from '../components/Calendar';
 import { Check, Dot, H1, Seg, hScroll, pill, tint } from '../components/ui';
 import { GlobalSearch } from '../components/GlobalSearch';
@@ -69,7 +73,9 @@ export function Home({ mobile }: { mobile: boolean }) {
   }, []);
   const today = useToday(), tomorrow = tomorrowOf(today);
   const all = useHomeTasks();
-  const ed = useTaskEditor(mobile);
+  const rec = useRecordEditor(mobile);
+  const act = useTaskActions();
+  const ed = { ...act, openEdit: rec.openEdit, dialog: rec.dialog, openNew: (p: { date: string }) => rec.openNew({ ...p, cat: filters.length === 1 ? filters[0] : undefined }) };
   const [filters, setFilters] = useState<Section[]>([]);
   const [view, setView] = useState<CalView>('mese');
   const [anchor, setAnchor] = useState(today);
@@ -83,7 +89,12 @@ export function Home({ mobile }: { mobile: boolean }) {
   const on = (c: Section) => filters.length === 0 || filters.includes(c);
   // Opzione (Impostazioni): le lezioni dell'orario compaiono anche nel calendario della Home.
   const lessons = prefs.lessonsOnHome && on('scuola') ? lessonTasks(docs.scuola, mobile ? mSel : anchor) : [];
-  const visible = [...all.filter((t) => on(t.cat)), ...lessons];
+  // Le scadenze di lettura dei libri (data precisa) compaiono nella griglia insieme alle attività.
+  const visible = [...all.filter((t) => on(t.cat)), ...lessons, ...(on('lettura') ? bookDeadlines(docs.lettura) : [])];
+  const month = (mobile ? mSel : anchor).slice(0, 7);
+  const extras = on('lettura') && monthBooks(docs.lettura, month).length > 0
+    ? <LetturaCalendarExtras month={month} mobile={mobile} legend={false} onBook={(id) => rec.openEdit({ id: 'libro:' + id, src: id, cat: 'lettura' } as HomeTask)} />
+    : null;
   const openTask = (t: HomeTask) => {
     if (t.id.startsWith('lez:')) { try { localStorage.setItem('nocturna-ui-scuola', JSON.stringify({ tab: 'orario' })); } catch {} window.location.hash = '#/scuola'; } else ed.openEdit(t);
   };
@@ -110,6 +121,11 @@ export function Home({ mobile }: { mobile: boolean }) {
               <FilterChips filters={filters} setFilters={setFilters} mobile />
             </div>
             <MobileCalendar tasks={visible} view={mView} setView={setMView} sel={mSel} setSel={setMSel} today={today} cols={cols} onTask={openTask} />
+            <p style={{ margin: '14px 0 0', fontSize: 13.5, color: 'var(--color-neutral-500)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-neutral-300)' }} />completata
+              <span style={{ width: 8, height: 8, boxSizing: 'border-box', borderRadius: '50%', border: '1.5px solid var(--color-neutral-300)', marginLeft: 8 }} />da fare · il colore è quello dell'area
+            </p>
+            {extras}
           </>
         ) : (
           <>
@@ -161,6 +177,7 @@ export function Home({ mobile }: { mobile: boolean }) {
         </div>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           <DeskCalendar tasks={visible} view={view} anchor={anchor} sel={sel} today={today} cols={cols} onDay={(k) => { setSel(k); setPanelOpen(true); }} onTask={openTask} onMove={ed.move} />
+          {extras}
         </div>
       </main>
       {panelOpen ? (

@@ -16,7 +16,7 @@ export function notifyFields(c: Section, x: Rec, cols?: ColsConfig): NotifyField
   const none: NotifyFields = { notifyAt: null, notifyQueue: [], notifyKinds: [], notifiedAt: null };
   // Libri con scadenza di lettura precisa: avviso 3 giorni prima e il giorno stesso, alle 9:00.
   if (c === 'lettura' && x.kind === 'libro') {
-    if (x.deletedAt || x.deadlineMode !== 'data' || !x.deadline || ['completato', 'nonleggere'].includes(x.status || '')) return none;
+    if (x.deletedAt || x.volDone || x.volCancelled || x.deadlineMode !== 'data' || !x.deadline || ['completato', 'nonleggere'].includes(x.status || '')) return none;
     const cut = Date.now() - 10 * 60000;
     const q = [3, 0].map((n) => { const d = add(P(x.deadline), -n); d.setHours(PLAN_REMINDER_HOUR, 0, 0, 0); return d.getTime(); }).filter((t) => t >= cut).sort((a, b) => a - b);
     return { notifyAt: q[0] ? Timestamp.fromMillis(q[0]) : null, notifyQueue: q.map((t) => Timestamp.fromMillis(t)), notifyKinds: q.map(() => 'libro'), notifiedAt: null };
@@ -43,4 +43,4 @@ export function notifyFields(c: Section, x: Rec, cols?: ColsConfig): NotifyField
 
 /** True se i campi che influenzano i promemoria sono cambiati. */
 export const touchesReminders = (patch: Record<string, any>) =>
-  ['date', 'due', 'start', 'time', 'type', 'status', 'reminder', 'deletedAt', 'kind', 'deadline', 'deadlineMode'].some((k) => k in patch);
+  ['date', 'due', 'start', 'time', 'type', 'status', 'reminder', 'deletedAt', 'kind', 'deadline', 'deadlineMode', 'volDone', 'volCancelled'].some((k) => k in patch);

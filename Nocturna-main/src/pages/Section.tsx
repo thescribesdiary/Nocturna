@@ -10,7 +10,8 @@ import { RecordForm } from '../components/RecordForm';
 import { ActCard, FieldList, Panel, StatusPills, SubTitle, catKicker } from '../components/Detail';
 import { H1, pill } from '../components/ui';
 import { fab } from './Home';
-import { BookDetail, BooksView, InspirationDetail, InspirationView, LavoroOverview, LetturaOverview, NoteDetail, NotesView, ProjectDetail, ProjectsView, SubjectDetail, SubjectsView, TimetableView, WritingHome } from './views';
+import { bookDeadlines } from '../data/books';
+import { LetturaCalendarExtras, BookDetail, BooksView, InspirationDetail, InspirationView, LavoroOverview, LetturaOverview, NoteDetail, NotesView, ProjectDetail, ProjectsView, SubjectDetail, SubjectsView, TimetableView, WritingHome } from './views';
 import { useTaskActions } from '../data/actions';
 
 export type Detail = { kind: string; id: string } | null;
@@ -87,6 +88,8 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
   // Calendario: attività filtrate + lezioni dell'orario (solo Scuola)
   const calTasks: HomeTask[] = useMemo(() => {
     const t = filtered.map((x) => toHome(c, x, st.cols));
+    // Lettura: anche le scadenze di lettura dei libri (data precisa), se non filtrate per tipo o libro.
+    if (c === 'lettura' && !Object.values(flt).some((a) => a?.length) && !ql) t.push(...bookDeadlines(st.docs.lettura));
     if (c === 'scuola' && lessons) {
       const base = mobile ? P(mSel) : P(anchor);
       const start = add(monday(new Date(base.getFullYear(), base.getMonth(), 1)), -7);
@@ -100,8 +103,8 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
       }
     }
     return t;
-  }, [filtered, lessons, anchor, mSel, mobile, st.docs, st.cols, c]);
-  const onCalTask = (t: HomeTask) => (t.id.startsWith('lez:') ? ui.openForm('lezione', st.docs.scuola.find((x) => x.id === t.src)) : ui.openDetail(actKind, t.src));
+  }, [filtered, lessons, anchor, mSel, mobile, st.docs, st.cols, c, flt, ql]);
+  const onCalTask = (t: HomeTask) => (t.id.startsWith('libro:') ? ui.openDetail('libro', t.src) : t.id.startsWith('lez:') ? ui.openForm('lezione', st.docs.scuola.find((x) => x.id === t.src)) : ui.openDetail(actKind, t.src));
 
   const newAct = (pre: Partial<Rec> = {}) => {
     const base: Partial<Rec> = { ...pre };
@@ -173,9 +176,13 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
       </>
     );
   } else if (tab === 'calendario') {
-    body = mobile
-      ? <MobileCalendar tasks={calTasks} view={mView} setView={setMView} sel={mSel} setSel={setMSel} today={today} cols={st.cols} onTask={onCalTask} />
-      : <><CalToolbar view={view} anchor={anchor} today={today} setAnchor={setAnchor} setView={setView} /><div><DeskCalendar tasks={calTasks} view={view} anchor={anchor} today={today} cols={st.cols} onDay={(k) => { setAnchor(k); setView('giorno'); }} onTask={onCalTask} onMove={act.move} /></div></>;
+    const byType = c === 'lettura';
+    body = <>
+      {mobile
+        ? <MobileCalendar tasks={calTasks} view={mView} setView={setMView} sel={mSel} setSel={setMSel} today={today} cols={st.cols} onTask={onCalTask} byType={byType} />
+        : <><CalToolbar view={view} anchor={anchor} today={today} setAnchor={setAnchor} setView={setView} /><div><DeskCalendar tasks={calTasks} view={view} anchor={anchor} today={today} cols={st.cols} onDay={(k) => { setAnchor(k); setView('giorno'); }} onTask={onCalTask} onMove={act.move} byType={byType} /></div></>}
+      {c === 'lettura' && <LetturaCalendarExtras month={(mobile ? mSel : anchor).slice(0, 7)} mobile={mobile} onBook={(id) => ui.openDetail('libro', id)} />}
+    </>;
   } else if (tab === 'materie') body = <SubjectsView ui={ui} />;
   else if (tab === 'orario') body = <TimetableView ui={ui} />;
   else if (tab === 'panoramica') body = c === 'lavoro' ? <LavoroOverview ui={ui} /> : c === 'lettura' ? <LetturaOverview ui={ui} /> : <WritingHome ui={ui} />;

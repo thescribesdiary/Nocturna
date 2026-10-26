@@ -25,7 +25,7 @@ export function useSummaryGroups() {
   const tasks = useHomeTasks().filter((t) => !t.done && t.date);
   // Scadenze di lettura dei libri (entro 3 giorni o già scadute)
   const reads: HomeTask[] = docs.lettura
-    .filter((b) => b.kind === 'libro' && b.deadlineMode === 'data' && b.deadline && b.deadline <= K(add(P(today), 3)) && !['completato', 'nonleggere'].includes(b.status || ''))
+    .filter((b) => b.kind === 'libro' && !b.volDone && !b.volCancelled && b.deadlineMode === 'data' && b.deadline && b.deadline <= K(add(P(today), 3)) && !['completato', 'nonleggere'].includes(b.status || ''))
     .map((b) => ({ id: 'libro:' + b.id, src: b.id, cat: 'lettura' as const, title: 'Leggere «' + b.title + '»', date: b.deadline, time: '', status: b.status || '', urgent: false, repeat: '', done: false }));
   tasks.push(...reads);
   const limit = K(add(P(today), 3));

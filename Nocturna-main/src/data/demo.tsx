@@ -4,6 +4,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { K, add } from '../lib/dates';
 import { ACT_KIND, NEW_ACT, ORDER, Rec, Section } from './sections';
 import { Ctx, Prefs, Store, TrashEntry } from './store';
+import { LetturaCfg, letturaCfg, setLetturaCfg } from './schema';
 
 const d = (n: number) => K(add(new Date(), n));
 const A = (c: Section, o: Record<string, any>): Rec => ({ ...NEW_ACT[c], kind: ACT_KIND[c], deletedAt: null, ...o } as Rec);
@@ -30,6 +31,10 @@ const seed = (): Record<Section, Rec[]> => ({
   lettura: [
     { id: 'b1', kind: 'libro', title: 'Le ore di vetro', author: 'Ilaria Montesi', publisher: 'Corvoscuro (fittizia)', format: 'cartaceo', status: 'inlettura', collabType: 'blogtour', collabName: 'Edizioni Nebbialta', deadlineMode: 'data', deadline: d(10), tbr: false } as Rec,
     { id: 'b2', kind: 'libro', title: 'Canti del faro', author: 'Guido Serra', publisher: 'Lanterna', format: 'digitale', status: 'daleggere', tbr: true, reader: 'delegato', delegate: 'Giulia R.', deadlineMode: 'nessuna' } as Rec,
+    { id: 'b3', kind: 'libro', title: 'Tramonto di cicatrici', author: 'Giorgia Saolini', publisher: 'Indipendente', format: 'digitale', status: 'daleggere', collabType: 'reviewparty', collabName: 'Il circolo delle recensioni', received: d(-6), added: d(-50), deadlineMode: 'data', deadline: d(16) } as Rec,
+    { id: 'b4', kind: 'libro', title: 'Ciò che resta di te', author: 'Lexie Moretti', publisher: 'Edizioni Rovo', format: 'cartaceo', status: 'daleggere', deadlineMode: 'mese', deadlineMonth: d(0).slice(0, 7) } as Rec,
+    A('lettura', { id: 'r6', book: 'b3', title: 'Recensione «Tramonto di cicatrici»', type: 'recensione', date: d(19), status: 'organizzare', channels: ['blog', 'instagram', 'goodreads'] }),
+    A('lettura', { id: 'r7', book: 'b1', title: 'Unboxing «Le ore di vetro»', type: 'unboxing', date: d(-3), status: 'completato', channels: ['instagram'] }),
     A('lettura', { id: 'r1', book: 'b1', title: 'Recensione «Le ore di vetro»', type: 'recensione', date: d(0), time: '18:00', status: 'preparare', reminder: '1' }),
     A('lettura', { id: 'r2', title: 'Cover reveal «Inverno a Kessaly»', type: 'cover', date: d(3), time: '12:00', status: 'programmato' }),
     A('lettura', { id: 'r3', title: 'Release «Sale e cenere»', type: 'release', date: d(7), status: 'programmato' }),
@@ -50,6 +55,8 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
   const [raw, setRaw] = useState(seed);
   const [prefs, setP] = useState<Prefs>({ theme: (new URLSearchParams(location.search).get('theme') as any) || 'scuro', summaryOnOpen: !location.search.includes('nosum'), lessonsOnHome: false, autoTrash: false });
   const [cols, setC] = useState({});
+  const [lc, setLc] = useState<LetturaCfg | null>(null);
+  setLetturaCfg(lc);
   const [toast, setToast] = useState('');
   const [toastUndo, setToastUndo] = useState<(() => void) | null>(null);
   const t = useRef<number>();
@@ -72,6 +79,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     setPrefs: (p) => setP((x) => ({ ...x, ...p })),
     setProfile: () => {},
     setCols: (s, c) => setC((x) => ({ ...x, [s]: c })),
+    lcfg: letturaCfg(), setLcfg: (c) => setLc(c),
     toast, toastUndo, say,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

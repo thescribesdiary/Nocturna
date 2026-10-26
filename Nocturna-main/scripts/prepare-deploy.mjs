@@ -23,11 +23,14 @@ const vm = pasted.match(/vapidKey\s*["']?\s*:\s*["']([^"']+)["']/);
 const vapidKey = ((vm && vm[1]) || process.env.FIREBASE_VAPID_KEY || fileCfg.vapidKey || '').trim();
 writeFileSync('nocturna.config.js', `// Generato automaticamente durante la pubblicazione.\nexport default ${JSON.stringify({ firebase: fb, vapidKey }, null, 2)};\n`);
 
-// 2. Account autorizzato: solo dal secret ALLOWED_EMAIL (non compare mai nel codice pubblico).
-const email = (process.env.ALLOWED_EMAIL || '').trim().toLowerCase();
-if (!/^[^@\s'\\]+@[^@\s'\\]+\.[^@\s'\\]+$/.test(email)) fail("Manca il secret ALLOWED_EMAIL su GitHub con l'indirizzo Google autorizzato (vedi README).");
+// 2. Account autorizzati: solo dal secret ALLOWED_EMAIL (non compaiono mai nel codice pubblico).
+//    Uno o più indirizzi Google separati da virgola: tutti vedono e modificano gli stessi dati.
+const emails = (process.env.ALLOWED_EMAIL || '').split(/[,;\s]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+if (!emails.length) fail("Manca il secret ALLOWED_EMAIL su GitHub con l'indirizzo Google autorizzato (vedi README).");
+for (const e of emails) if (!/^[^@\s'\\]+@[^@\s'\\]+\.[^@\s'\\]+$/.test(e)) fail(`Nel secret ALLOWED_EMAIL "${e}" non sembra un indirizzo email. Scrivi gli indirizzi separati da una virgola.`);
 
-writeFileSync('firestore.rules', readFileSync('firestore.rules.template', 'utf8').replace('__ALLOWED_EMAIL__', email));
+writeFileSync('firestore.rules', readFileSync('firestore.rules.template', 'utf8').replace('__ALLOWED_EMAILS__', emails.map((e) => `'${e}'`).join(', ')));
 writeFileSync('.firebaserc', JSON.stringify({ projects: { default: fb.projectId } }, null, 2));
 if (process.env.GITHUB_ENV) writeFileSync(process.env.GITHUB_ENV, `FIREBASE_PROJECT=${fb.projectId}\n`, { flag: 'a' });
+console.log(`✓ Account autorizzati: ${emails.length}.`);
 console.log(`✓ Configurazione valida per il progetto ${fb.projectId}.` + (vapidKey ? ' Notifiche push configurate.' : ' Notifiche push non ancora configurate (manca vapidKey).'));
