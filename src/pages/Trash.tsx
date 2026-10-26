@@ -3,6 +3,7 @@ import { GG, MESI, P } from '../lib/dates';
 import { CATS, KIND_LABEL, catVar, dateOf, recTitle } from '../data/sections';
 import { useStore } from '../data/store';
 import { H1 } from '../components/ui';
+import { Rosette } from '../components/Ornaments';
 
 const when = (ms: number) => {
   const d = new Date(ms), t = new Date();
@@ -54,7 +55,7 @@ export function Trash({ mobile }: { mobile: boolean }) {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '28px 0', maxWidth: 480 }}>
-          <i className="ph ph-trash-simple" style={{ fontSize: 34, color: 'var(--color-neutral-500)' }} />
+          <Rosette size={84} />
           <p style={{ fontSize: 16, margin: 0 }}>Il cestino è vuoto.</p>
           <p style={{ fontSize: 14.5, color: 'var(--color-neutral-400)', margin: 0 }}>Quando elimini un elemento da una sezione, lo ritrovi qui.</p>
         </div>

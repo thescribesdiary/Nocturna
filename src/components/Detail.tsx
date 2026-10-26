@@ -1,16 +1,18 @@
 import React from 'react';
-import { P, fmtS } from '../lib/dates';
+import { GG, P, fmtS } from '../lib/dates';
 import { CATS, Rec, Section, catVar, dateOf, isDone, statusLabel, visibleCols, toneColor } from '../data/sections';
 import { useStore } from '../data/store';
 import { useTaskActions } from '../data/actions';
-import { Field, KindDef, Opt, getP, refOf, typeOf, A_COLORS } from '../data/schema';
+import { Field, KindDef, Opt, getP, refOf, typeOf, lTypeColor } from '../data/schema';
 import { pill } from './ui';
+import { Corners } from './Ornaments';
 
 /** Pannello laterale (desktop) o a schermo intero (telefono) con il dettaglio di un elemento. */
 export function Panel({ title, kicker, onClose, mobile, children, actions }: { title: string; kicker?: React.ReactNode; onClose: () => void; mobile: boolean; children: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 45, display: 'flex', justifyContent: 'flex-end', background: 'color-mix(in srgb, var(--color-sidebar) 55%, transparent)' }} onClick={(e) => e.target === e.currentTarget && onClose()} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
-      <aside role="dialog" aria-modal="true" aria-label={title} style={{ width: mobile ? '100%' : 'min(480px,100%)', height: '100%', overflowY: 'auto', background: 'var(--color-bg)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 16, padding: mobile ? 'calc(env(safe-area-inset-top, 0px) + 12px) 18px calc(env(safe-area-inset-bottom, 0px) + 28px)' : '22px 24px 28px' }}>
+      <aside role="dialog" aria-modal="true" aria-label={title} style={{ width: mobile ? '100%' : 'min(480px,100%)', height: '100%', overflowY: 'auto', background: 'var(--color-bg)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 16, position: 'relative', padding: mobile ? 'calc(env(safe-area-inset-top, 0px) + 12px) 18px calc(env(safe-area-inset-bottom, 0px) + 28px)' : '22px 24px 28px' }}>
+        {!mobile && <Corners size={34} inset={4} />}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 }}>
             {kicker}
@@ -49,11 +51,11 @@ export function FieldList({ def, rec, skip = [] }: { def: KindDef; rec: Rec; ski
       else if (fl.t === 'multi') out = (v as string[]).map((x) => opts.find((o) => o[0] === x)?.[1] || x).join(', ');
       else if (fl.t === 'bool') out = 'Sì';
       else if (fl.t === 'status') out = statusLabel(cols, def.section, v);
-      else if (fl.t === 'repeat') out = { giorno: 'Ogni giorno', settimana: 'Ogni settimana', mese: 'Ogni mese' }[v as string] || '';
+      else if (fl.t === 'repeat') out = ({ giorno: 'Ogni giorno', settimana: 'Ogni settimana', mese: 'Ogni mese' }[v as string] || '') + (rec.repeatDays?.length ? ' (' + [...rec.repeatDays].sort((a: string, b: string) => ((+a + 6) % 7) - ((+b + 6) % 7)).map((d: string) => GG[+d].toLowerCase()).join(', ') + ')' : '') + (rec.repeatUntil ? ' fino al ' + fmtS(rec.repeatUntil) : '');
       else if (fl.t === 'rating') out = '★'.repeat(v) + '☆'.repeat(5 - v);
       else if (fl.t === 'image') return;
       if (out === '' || out == null) return;
-      rows.push([fl.t === 'bool' ? fl.label : fl.label.replace(/ \(facoltativ[ao]\)/, ''), fl.t === 'bool' ? '' : out]);
+      rows.push([fl.t === 'bool' ? fl.label.replace(/ \(.*\)$/, '') : (fl.labelFn ? fl.labelFn(rec) : fl.label).replace(/ \(facoltativ[ao]\)/, ''), fl.t === 'bool' ? '' : out]);
     });
   });
   if (!rows.length) return null;
@@ -105,7 +107,7 @@ export function cardInfo(c: Section, x: Rec, docs: Record<Section, Rec[]>, cols:
   if (c === 'lavoro' && x.blocked) badges.push('Bloccata');
   if (x.repeat) badges.push('Ricorrente');
   const dateLabel = date ? fmtS(date) + (x.time ? ' · ' + x.time : '') : 'Senza data';
-  return { title: x.title || '', typeLabel: t[1].replace(/ \(.*\)/, ''), icon: t[2] || 'ph-dots-three-circle', typeColor: c === 'lettura' ? A_COLORS[x.type] : undefined, ref: refOf(c, x, docs), dateLabel: c === 'scuola' && !x.date && x.due ? 'Scadenza ' + fmtS(x.due) : dateLabel, flag, done, badges };
+  return { title: x.title || '', typeLabel: t[1].replace(/ \(.*\)/, ''), icon: t[2] || 'ph-dots-three-circle', typeColor: c === 'lettura' ? lTypeColor(x.type) : undefined, ref: refOf(c, x, docs), dateLabel: c === 'scuola' && !x.date && x.due ? 'Scadenza ' + fmtS(x.due) : dateLabel, flag, done, badges };
 }
 
 /** Scheda di un'attività (bacheche, elenchi, dettagli). */

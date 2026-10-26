@@ -8,6 +8,61 @@ import { H1, Route, Seg } from '../components/ui';
 import { SummaryDialog } from '../components/Summary';
 import { ColumnsEditor } from '../components/Kanban';
 import { resizeImage } from '../components/RecordForm';
+import { DEFAULT_LCFG, LChan, LType, LetturaCfg } from '../data/schema';
+
+const ICONS = ['ph-pen-nib', 'ph-flag-pennant', 'ph-image', 'ph-megaphone-simple', 'ph-article', 'ph-package', 'ph-calendar-star', 'ph-share-network', 'ph-sparkle', 'ph-microphone', 'ph-video-camera', 'ph-chat-circle-text', 'ph-heart', 'ph-star', 'ph-bookmark-simple', 'ph-dots-three-circle'];
+const slug = (t: string, taken: string[]) => { let b = t.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '').slice(0, 20) || 'tipo', id = b, i = 2; while (taken.includes(id)) id = b + i++; return id; };
+
+/** Tipi di attività e canali del piano editoriale di Lettura. */
+function LetturaEditor({ mobile, onClose }: { mobile: boolean; onClose: () => void }) {
+  const st = useStore();
+  const [d, setD] = useState<LetturaCfg>(() => JSON.parse(JSON.stringify(st.lcfg)));
+  const used = (k: 'type' | 'channels', id: string) => st.docs.lettura.filter((x) => x.kind === 'attivita' && (k === 'type' ? x.type === id : (x.channels || []).includes(id))).length;
+  const setT = (i: number, p: Partial<LType>) => setD({ ...d, types: d.types.map((t, j) => (j === i ? { ...t, ...p } : t)) });
+  const setC = (i: number, p: Partial<LChan>) => setD({ ...d, channels: d.channels.map((t, j) => (j === i ? { ...t, ...p } : t)) });
+  const save = () => {
+    const clean: LetturaCfg = { types: d.types.filter((t) => t.label.trim()).map((t) => ({ ...t, label: t.label.trim() })), channels: d.channels.filter((t) => t.label.trim()).map((t) => ({ ...t, label: t.label.trim() })) };
+    if (!clean.types.length || !clean.channels.length) { st.say('Serve almeno un tipo e almeno un canale.'); return; }
+    st.setLcfg(clean); st.say('Tipi e canali di Lettura salvati.'); onClose();
+  };
+  const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 };
+  const del = (n: number, f: () => void) => <button className="btn btn-ghost btn-icon" onClick={() => { if (n && !window.confirm('È usato da ' + n + (n === 1 ? ' attività' : ' attività') + ', che resteranno con «Altro». Eliminarlo?')) return; f(); }} aria-label="Elimina" style={{ color: 'var(--color-urgent)', flex: 'none' }}><i className="ph ph-trash" /></button>;
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'grid', placeItems: mobile ? 'end stretch' : 'center', padding: mobile ? 0 : 20, background: 'color-mix(in srgb, var(--color-sidebar) 70%, transparent)' }}>
+      <div role="dialog" aria-modal="true" aria-label="Tipi e canali di Lettura" className="dialog" style={{ width: mobile ? '100%' : 'min(600px,100%)', maxHeight: mobile ? '92%' : '100%', overflowY: 'auto', gap: 14, borderRadius: mobile ? '22px 22px 0 0' : undefined }}>
+        <div className="dialog-title">Tipi e canali di Lettura</div>
+        <p style={muted}>Sono le voci del piano editoriale dei libri e delle attività di The Scribe's Diary. Il colore si vede nei pallini del calendario e nella legenda.</p>
+        <span style={{ fontSize: 12.5, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--color-neutral-400)' }}>Tipi di attività</span>
+        {d.types.map((t, i) => (
+          <div key={t.id} style={row}>
+            <input type="color" value={t.color} onChange={(e) => setT(i, { color: e.target.value })} aria-label={'Colore di ' + t.label} style={{ width: 40, height: 40, flex: 'none', padding: 2, border: '1px solid var(--color-neutral-600)', borderRadius: 8, background: 'none', cursor: 'pointer' }} />
+            <select className="input" value={t.icon} onChange={(e) => setT(i, { icon: e.target.value })} aria-label="Icona" style={{ width: mobile ? 104 : 140, flex: 'none' }}>
+              {ICONS.map((ic) => <option key={ic} value={ic}>{ic.replace('ph-', '')}</option>)}
+            </select>
+            <i className={'ph ' + t.icon} style={{ fontSize: 18, color: t.color, flex: 'none' }} />
+            <input className="input" value={t.label} onChange={(e) => setT(i, { label: e.target.value })} aria-label="Nome del tipo" style={{ flex: 1, minWidth: 0 }} />
+            {del(used('type', t.id), () => setD({ ...d, types: d.types.filter((_, j) => j !== i) }))}
+          </div>
+        ))}
+        <button className="btn btn-secondary" onClick={() => setD({ ...d, types: [...d.types, { id: slug('nuovo' + d.types.length, d.types.map((x) => x.id)), label: '', icon: 'ph-bookmark-simple', color: '#b98ad6' }] })} style={{ alignSelf: 'flex-start' }}><i className="ph ph-plus" />Aggiungi tipo</button>
+        <span style={{ fontSize: 12.5, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--color-neutral-400)', paddingTop: 6 }}>Canali</span>
+        {d.channels.map((t, i) => (
+          <div key={t.id} style={row}>
+            <i className={'ph ' + t.icon} style={{ fontSize: 18, color: 'var(--color-accent-300)', flex: 'none', width: 24 }} />
+            <input className="input" value={t.label} onChange={(e) => setC(i, { label: e.target.value })} aria-label="Nome del canale" style={{ flex: 1, minWidth: 0 }} />
+            {del(used('channels', t.id), () => setD({ ...d, channels: d.channels.filter((_, j) => j !== i) }))}
+          </div>
+        ))}
+        <button className="btn btn-secondary" onClick={() => setD({ ...d, channels: [...d.channels, { id: slug('canale' + d.channels.length, d.channels.map((x) => x.id)), label: '', icon: 'ph-hash' }] })} style={{ alignSelf: 'flex-start' }}><i className="ph ph-plus" />Aggiungi canale</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', paddingTop: 6 }}>
+          <button className="btn btn-ghost" onClick={() => setD(JSON.parse(JSON.stringify(DEFAULT_LCFG)))} style={{ marginRight: 'auto', color: 'var(--color-neutral-300)' }}><i className="ph ph-arrow-counter-clockwise" />Valori iniziali</button>
+          <button className="btn btn-secondary" onClick={onClose}>Annulla</button>
+          <button className="btn btn-primary" onClick={save} style={{ paddingInline: 18 }}>Salva</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const card: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 14, padding: '18px 20px', borderRadius: 12, background: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', minWidth: 0 };
 const muted = { fontSize: 14, color: 'var(--color-neutral-400)', margin: 0 } as const;
@@ -56,6 +111,7 @@ export function Account({ page, mobile, go }: { page: 'profilo' | 'impostazioni'
   const [edit, setEdit] = useState<{ name: string; bio: string; avatar: string } | null>(null);
   const [preview, setPreview] = useState(false);
   const [cols, setCols] = useState<Section | null>(null);
+  const [lt, setLt] = useState(false);
   const [push, setPush] = useState<PushState>('spente');
   const [busy, setBusy] = useState('');
   const [restore, setRestore] = useState<{ file: string; parsed: ParsedBackup | null; ack: boolean } | null>(null);
@@ -121,6 +177,7 @@ export function Account({ page, mobile, go }: { page: 'profilo' | 'impostazioni'
         <Head icon="ph-cloud">Account e sincronizzazione</Head>
         <span style={{ fontSize: 15, overflowWrap: 'anywhere' }}><i className="ph ph-google-logo" /> {user?.email}</span>
         <SyncLine />
+        <p style={muted}>I dati sono condivisi fra tutti gli account Google autorizzati (secret ALLOWED_EMAIL su GitHub, più indirizzi separati da virgola): quello che modifichi da un account lo vedi subito anche dall'altro, su PC e telefono.</p>
         <button className="btn btn-secondary" onClick={logout} style={{ alignSelf: 'flex-start', minHeight: 44 }}><i className="ph ph-sign-out" />Esci da questo dispositivo</button>
       </section>
 
@@ -163,10 +220,24 @@ export function Account({ page, mobile, go }: { page: 'profilo' | 'impostazioni'
           </div>
           <Switch on={st.prefs.summaryOnOpen} onClick={() => st.setPrefs({ summaryOnOpen: !st.prefs.summaryOnOpen })} label="Riepilogo all'apertura dell'app" />
         </div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 16 }}>Lezioni dell'orario nel calendario della Home</span>
+            <span style={muted}>Mostra anche le lezioni settimanali di Scuola, accanto alle attività. Di base è spento.</span>
+          </div>
+          <Switch on={st.prefs.lessonsOnHome} onClick={() => st.setPrefs({ lessonsOnHome: !st.prefs.lessonsOnHome })} label="Lezioni dell'orario nel calendario della Home" />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 16 }}>Svuota il cestino dopo 30 giorni</span>
+            <span style={muted}>Elimina in modo definitivo ciò che è nel cestino da più di 30 giorni, all'apertura dell'app. Di base è spento.</span>
+          </div>
+          <Switch on={st.prefs.autoTrash} onClick={() => st.setPrefs({ autoTrash: !st.prefs.autoTrash })} label="Svuota il cestino dopo 30 giorni" />
+        </div>
         <button className="btn btn-secondary" onClick={() => setPreview(true)} style={{ alignSelf: 'flex-start', minHeight: 42 }}><i className="ph ph-eye" />Anteprima del riepilogo</button>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 6 }}>
           <span style={{ fontSize: 16 }}>Promemoria su questo dispositivo</span>
-          <span style={muted}>Notifica 15 minuti prima delle attività con orario e, per il piano editoriale, nei giorni scelti nel campo «Promemoria», alle 9:00. Arrivano anche ad app chiusa. Attivale su ogni dispositivo su cui vuoi riceverle.</span>
+          <span style={muted}>Notifica 15 minuti prima delle attività con orario e, per il piano editoriale, nei giorni scelti nel campo «Promemoria», alle 9:00. Anche le scadenze di lettura dei libri ricevono un avviso 3 giorni prima e il giorno stesso. Arrivano anche ad app chiusa. Attivale su ogni dispositivo su cui vuoi riceverle.</span>
           <span style={{ fontSize: 14.5, color: push === 'attive' ? '#9fc0a8' : push === 'negate' ? 'var(--color-urgent)' : 'var(--color-neutral-300)' }}>{PUSH_LABEL[push]}</span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {push === 'spente' && <button className="btn btn-primary" disabled={!!busy} onClick={async () => { setBusy('push'); try { const s = await enablePush(st.uid); setPush(s); st.say(s === 'attive' ? 'Notifiche attivate.' : 'Notifiche non attivate.'); } catch (e) { console.error(e); st.say('Attivazione non riuscita. Riprova.'); } setBusy(''); }} style={{ minHeight: 44 }}><i className="ph ph-bell-ringing" />Attiva notifiche</button>}
@@ -193,6 +264,9 @@ export function Account({ page, mobile, go }: { page: 'profilo' | 'impostazioni'
             </button>
           ))}
         </div>
+        <span style={{ fontSize: 16, paddingTop: 6 }}>Piano editoriale di Lettura</span>
+        <span style={muted}>Tipi di attività (con il loro colore) e canali: {st.lcfg.types.length} tipi, {st.lcfg.channels.length} canali.</span>
+        <button className="btn btn-secondary" onClick={() => setLt(true)} style={{ alignSelf: 'flex-start', minHeight: 44 }}><i className="ph ph-palette" />Modifica tipi e canali</button>
       </section>
     </div>
   );
@@ -207,6 +281,7 @@ export function Account({ page, mobile, go }: { page: 'profilo' | 'impostazioni'
       {page === 'profilo' ? profilo : impostazioni}
       {preview && <SummaryDialog preview onClose={() => setPreview(false)} />}
       {cols && <ColumnsEditor c={cols} mobile={mobile} onClose={() => setCols(null)} />}
+      {lt && <LetturaEditor mobile={mobile} onClose={() => setLt(false)} />}
     </main>
   );
 }

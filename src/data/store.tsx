@@ -7,14 +7,15 @@ import {
 import { db } from '../firebase';
 import { ColsConfig, ORDER, Rec, Section } from './sections';
 import { notifyFields, touchesReminders } from './reminders';
+import { LetturaCfg, letturaCfg, setLetturaCfg } from './schema';
 
 export type Theme = 'scuro' | 'contrasto' | 'chiaro';
-export type Prefs = { theme: Theme; summaryOnOpen: boolean };
+export type Prefs = { theme: Theme; summaryOnOpen: boolean; lessonsOnHome: boolean; autoTrash: boolean };
 export type Profile = { name: string; bio: string; avatar: string };
 export type SyncState = 'sincronia' | 'attesa' | 'offline';
 export type TrashEntry = { section: Section; rec: Rec };
 
-const DEFAULT_PREFS: Prefs = { theme: 'scuro', summaryOnOpen: true };
+const DEFAULT_PREFS: Prefs = { theme: 'scuro', summaryOnOpen: true, lessonsOnHome: false, autoTrash: false };
 const THEME_KEY = 'nocturna-theme';
 export const cachedTheme = (): Theme => {
   try { return (localStorage.getItem(THEME_KEY) as Theme) || 'scuro'; } catch { return 'scuro'; }
@@ -33,14 +34,20 @@ export type Store = {
   create: (s: Section, data: Omit<Rec, 'id'> & { id?: string }) => string;
   update: (s: Section, id: string, patch: Record<string, any>) => void;
   trashIt: (s: Section, id: string) => void;
+  /** Come trashIt, ma avvisa se ci sono elementi collegati. Restituisce false se l'utente rinuncia. */
+  removeRec: (s: Section, id: string) => boolean;
   restore: (s: Section, id: string) => void;
   destroy: (s: Section, id: string) => void;
   emptyTrash: () => void;
   setPrefs: (p: Partial<Prefs>) => void;
   setProfile: (p: Partial<Profile>) => void;
   setCols: (s: Section, cols: ColsConfig[Section]) => void;
+  /** Tipi di attività e canali di Lettura (modificabili da Impostazioni). */
+  lcfg: LetturaCfg;
+  setLcfg: (c: LetturaCfg) => void;
   toast: string;
-  say: (msg: string) => void;
+  toastUndo: (() => void) | null;
+  say: (msg: string, undo?: () => void) => void;
 };
 
 export const Ctx = createContext<Store | null>(null);
@@ -59,15 +66,20 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [online, setOnline] = useState(navigator.onLine);
   const [toast, setToast] = useState('');
+  const [toastUndo, setToastUndo] = useState<(() => void) | null>(null);
+  const lastTrashAt = useRef(0);
   const rawRef = useRef(raw);
   rawRef.current = raw;
   const colsRef = useRef<ColsConfig>({});
   const tRef = useRef<number>();
 
-  const say = useCallback((msg: string) => {
+  const say = useCallback((msg: string, undo?: () => void) => {
+    // Il messaggio «nel cestino» dei chiamanti non deve coprire quello con «Annulla».
+    if (!undo && /cestino/i.test(msg) && Date.now() - lastTrashAt.current < 800) return;
     window.clearTimeout(tRef.current);
     setToast(msg);
-    tRef.current = window.setTimeout(() => setToast(''), 2800);
+    setToastUndo(() => undo || null);
+    tRef.current = window.setTimeout(() => { setToast(''); setToastUndo(null); }, undo ? 6000 : 2800);
   }, []);
   const fail = useCallback((e: any) => {
     console.error(e);
@@ -110,6 +122,9 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
   const profile: Profile = { name: '', bio: '', avatar: '', ...(settings.profilo || {}) };
   const cols: ColsConfig = settings.colonne || {};
   colsRef.current = cols;
+  // I moduli leggono tipi e canali di Lettura dal registro dello schema: lo aggiorniamo qui.
+  setLetturaCfg(settings.lettura);
+  const lcfg = letturaCfg();
 
   useEffect(() => {
     try { localStorage.setItem(THEME_KEY, prefs.theme); } catch {}
@@ -145,7 +160,24 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
     updateDoc(ref(s, id), { ...patch, ...extra, updatedAt: serverTimestamp() }).catch(fail);
   };
 
-  const trashIt: Store['trashIt'] = (s, id) => update(s, id, { deletedAt: Date.now() });
+  const trashIt: Store['trashIt'] = (s, id) => {
+    update(s, id, { deletedAt: Date.now() });
+    lastTrashAt.current = Date.now();
+    say('Spostato nel cestino.', () => { update(s, id, { deletedAt: null }); say('Elemento ripristinato.'); });
+  };
+  /** Quanti elementi dipendono da questo (attività di un progetto, libro o materia). */
+  const linksTo = (s: Section, id: string) => {
+    const f = s === 'scuola' ? 'subject' : s === 'lettura' ? 'book' : 'project';
+    return rawRef.current[s].filter((x) => !x.deletedAt && (x[f] === id || x.linkedTo === id) && x.kind !== 'progetto' && x.kind !== 'libro').length;
+  };
+  const removeRec: Store['removeRec'] = (s, id) => {
+    const r = rawRef.current[s].find((x) => x.id === id);
+    const isParent = r && ((s === 'scuola' && r.kind === 'materia') || (s === 'lettura' && r.kind === 'libro') || ((s === 'lavoro' || s === 'scrittura') && r.kind === 'progetto'));
+    const n = isParent ? linksTo(s, id) : 0;
+    if (n > 0 && !window.confirm('«' + (r!.title || r!.name) + '» ha ' + n + (n === 1 ? ' elemento collegato' : ' elementi collegati') + ' (attività o note) che resteranno senza collegamento. Spostarlo nel cestino?')) return false;
+    trashIt(s, id);
+    return true;
+  };
   const restore: Store['restore'] = (s, id) => update(s, id, { deletedAt: null });
   const destroy: Store['destroy'] = (s, id) => { deleteDoc(ref(s, id)).catch(fail); };
   const emptyTrash = () => {
@@ -161,9 +193,23 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
     setDoc(doc(db, 'users', uid, 'impostazioni', id), { ...patch, updatedAt: serverTimestamp() }, { merge: true }).catch(fail);
   const setPrefs = (p: Partial<Prefs>) => { setSetting('preferenze', p); };
   const setProfile = (p: Partial<Profile>) => { setSetting('profilo', p); };
+  const setLcfg: Store['setLcfg'] = (c) => { setSetting('lettura', { types: c.types, channels: c.channels }); };
   const setCols: Store['setCols'] = (s, c) => {
     setDoc(doc(db, 'users', uid, 'impostazioni', 'colonne'), { [s]: c, updatedAt: serverTimestamp() }, { merge: true }).catch(fail);
   };
+
+  // Svuotamento automatico del cestino (opzione): elimina ciò che è nel cestino da più di 30 giorni.
+  const autoDone = useRef(false);
+  useEffect(() => {
+    if (!ORDER.every((s) => loaded[s]) || !loaded.impostazioni || autoDone.current || !prefs.autoTrash) return;
+    autoDone.current = true;
+    const old = trash.filter((t) => (t.rec.deletedAt || 0) < Date.now() - 30 * 86400000);
+    for (let i = 0; i < old.length; i += 450) {
+      const b = writeBatch(db);
+      old.slice(i, i + 450).forEach((t) => b.delete(ref(t.section, t.rec.id)));
+      b.commit().catch(fail);
+    }
+  }); // eslint-disable-line
 
   const ready = ORDER.every((s) => loaded[s]) && !!loaded.impostazioni;
   const anyPending = Object.values(pending).some(Boolean);
@@ -171,8 +217,8 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
 
   const value: Store = {
     uid, ready, docs, trash, prefs, profile, cols, sync,
-    newId, create, update, trashIt, restore, destroy, emptyTrash, setPrefs, setProfile, setCols,
-    toast, say,
+    newId, create, update, trashIt, removeRec, restore, destroy, emptyTrash, setPrefs, setProfile, setCols, lcfg, setLcfg,
+    toast, toastUndo, say,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

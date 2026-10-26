@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { K, P, add, monday } from '../lib/dates';
 import { ACT_KIND, CATS, HomeTask, Rec, Section as Sec, catVar, toHome } from '../data/sections';
 import { useStore } from '../data/store';
@@ -10,7 +10,9 @@ import { RecordForm } from '../components/RecordForm';
 import { ActCard, FieldList, Panel, StatusPills, SubTitle, catKicker } from '../components/Detail';
 import { H1, pill } from '../components/ui';
 import { fab } from './Home';
-import { BookDetail, BooksView, LavoroOverview, LetturaOverview, NoteDetail, NotesView, ProjectDetail, ProjectsView, SubjectDetail, SubjectsView, TimetableView } from './views';
+import { bookDeadlines } from '../data/books';
+import { LetturaCalendarExtras, BookDetail, BooksView, InspirationDetail, InspirationView, LavoroOverview, LetturaOverview, NoteDetail, NotesView, ProjectDetail, ProjectsView, SubjectDetail, SubjectsView, TimetableView, WritingHome } from './views';
+import { useTaskActions } from '../data/actions';
 
 export type Detail = { kind: string; id: string } | null;
 export type UI = {
@@ -24,15 +26,21 @@ const TABS: Record<Sec, [string, string, string][]> = {
   scuola: [['kanban', 'Kanban', 'ph-kanban'], ['calendario', 'Calendario', 'ph-calendar-blank'], ['materie', 'Materie', 'ph-books'], ['orario', 'Orario', 'ph-clock']],
   lavoro: [['panoramica', 'Panoramica', 'ph-squares-four'], ['kanban', 'Kanban', 'ph-kanban'], ['calendario', 'Calendario', 'ph-calendar-blank'], ['progetti', 'Progetti', 'ph-folders'], ['appunti', 'Appunti e verbali', 'ph-notepad']],
   lettura: [['panoramica', 'Panoramica', 'ph-squares-four'], ['libri', 'Libri e collaborazioni', 'ph-books'], ['kanban', 'Attività', 'ph-kanban'], ['calendario', 'Calendario', 'ph-calendar-blank']],
-  scrittura: [['kanban', 'Attività', 'ph-kanban'], ['progetti', 'Progetti', 'ph-folders'], ['corte', 'Attività della corte', 'ph-crown-simple'], ['calendario', 'Calendario', 'ph-calendar-blank']],
+  scrittura: [['panoramica', 'Panoramica', 'ph-squares-four'], ['kanban', 'Attività', 'ph-kanban'], ['progetti', 'Progetti', 'ph-folders'], ['ispirazione', 'Ispirazione', 'ph-images'], ['corte', 'Attività della corte', 'ph-crown-simple'], ['calendario', 'Calendario', 'ph-calendar-blank']],
 };
 
 export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
   const st = useStore();
   const today = useToday();
-  const [tab, setTab] = useState(TABS[c][0][0]);
+  // Ultima scheda e filtri di ogni sezione, ritrovati come li avevi lasciati.
+  const saved = useMemo(() => { try { return JSON.parse(localStorage.getItem('nocturna-ui-' + c) || '{}'); } catch { return {}; } }, [c]);
+  const [tab, setTabS] = useState<string>(TABS[c].some((t) => t[0] === saved.tab) ? saved.tab : TABS[c][0][0]);
   const [q, setQ] = useState('');
-  const [flt, setFlt] = useState<Record<string, string[]>>({});
+  const [flt, setFltS] = useState<Record<string, string[]>>(saved.flt || {});
+  const keep = (p: Record<string, any>) => { try { localStorage.setItem('nocturna-ui-' + c, JSON.stringify({ tab, flt, ...p })); } catch {} };
+  const setTab = (t: string) => { setTabS(t); keep({ tab: t }); };
+  const setFlt = (f: Record<string, string[]>) => { setFltS(f); keep({ flt: f }); };
+  const act = useTaskActions();
   const [showF, setShowF] = useState(false);
   const [form, setForm] = useState<{ def: KindDef; rec: Partial<Rec>; onSaved?: (id: string) => void } | null>(null);
   const [detail, setDetail] = useState<Detail>(null);
@@ -42,6 +50,14 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
   const [mView, setMView] = useState<CalView>('settimana');
   const [mSel, setMSel] = useState(today);
   const [lessons, setLessons] = useState(true);
+  // Apertura di un elemento arrivata dalla ricerca globale
+  useEffect(() => {
+    try {
+      const o = JSON.parse(sessionStorage.getItem('nocturna-open') || 'null');
+      sessionStorage.removeItem('nocturna-open');
+      if (o && o.c === c) setDetail({ kind: o.kind, id: o.id });
+    } catch {}
+  }, []); // eslint-disable-line
 
   const ui: UI = {
     c, mobile,
@@ -72,6 +88,8 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
   // Calendario: attività filtrate + lezioni dell'orario (solo Scuola)
   const calTasks: HomeTask[] = useMemo(() => {
     const t = filtered.map((x) => toHome(c, x, st.cols));
+    // Lettura: anche le scadenze di lettura dei libri (data precisa), se non filtrate per tipo o libro.
+    if (c === 'lettura' && !Object.values(flt).some((a) => a?.length) && !ql) t.push(...bookDeadlines(st.docs.lettura));
     if (c === 'scuola' && lessons) {
       const base = mobile ? P(mSel) : P(anchor);
       const start = add(monday(new Date(base.getFullYear(), base.getMonth(), 1)), -7);
@@ -85,8 +103,8 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
       }
     }
     return t;
-  }, [filtered, lessons, anchor, mSel, mobile, st.docs, st.cols, c]);
-  const onCalTask = (t: HomeTask) => (t.id.startsWith('lez:') ? ui.openForm('lezione', st.docs.scuola.find((x) => x.id === t.src)) : ui.openDetail(actKind, t.src));
+  }, [filtered, lessons, anchor, mSel, mobile, st.docs, st.cols, c, flt, ql]);
+  const onCalTask = (t: HomeTask) => (t.id.startsWith('libro:') ? ui.openDetail('libro', t.src) : t.id.startsWith('lez:') ? ui.openForm('lezione', st.docs.scuola.find((x) => x.id === t.src)) : ui.openDetail(actKind, t.src));
 
   const newAct = (pre: Partial<Rec> = {}) => {
     const base: Partial<Rec> = { ...pre };
@@ -158,12 +176,17 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
       </>
     );
   } else if (tab === 'calendario') {
-    body = mobile
-      ? <MobileCalendar tasks={calTasks} view={mView} setView={setMView} sel={mSel} setSel={setMSel} today={today} cols={st.cols} onTask={onCalTask} />
-      : <><CalToolbar view={view} anchor={anchor} today={today} setAnchor={setAnchor} setView={setView} /><div><DeskCalendar tasks={calTasks} view={view} anchor={anchor} today={today} cols={st.cols} onDay={(k) => { setAnchor(k); setView('giorno'); }} onTask={onCalTask} /></div></>;
+    const byType = c === 'lettura';
+    body = <>
+      {mobile
+        ? <MobileCalendar tasks={calTasks} view={mView} setView={setMView} sel={mSel} setSel={setMSel} today={today} cols={st.cols} onTask={onCalTask} byType={byType} />
+        : <><CalToolbar view={view} anchor={anchor} today={today} setAnchor={setAnchor} setView={setView} /><div><DeskCalendar tasks={calTasks} view={view} anchor={anchor} today={today} cols={st.cols} onDay={(k) => { setAnchor(k); setView('giorno'); }} onTask={onCalTask} onMove={act.move} byType={byType} /></div></>}
+      {c === 'lettura' && <LetturaCalendarExtras month={(mobile ? mSel : anchor).slice(0, 7)} mobile={mobile} onBook={(id) => ui.openDetail('libro', id)} />}
+    </>;
   } else if (tab === 'materie') body = <SubjectsView ui={ui} />;
   else if (tab === 'orario') body = <TimetableView ui={ui} />;
-  else if (tab === 'panoramica') body = c === 'lavoro' ? <LavoroOverview ui={ui} /> : <LetturaOverview ui={ui} />;
+  else if (tab === 'panoramica') body = c === 'lavoro' ? <LavoroOverview ui={ui} /> : c === 'lettura' ? <LetturaOverview ui={ui} /> : <WritingHome ui={ui} />;
+  else if (tab === 'ispirazione') body = <InspirationView ui={ui} />;
   else if (tab === 'progetti') body = <ProjectsView ui={ui} />;
   else if (tab === 'appunti') body = <NotesView ui={ui} />;
   else if (tab === 'libri') body = <BooksView ui={ui} />;
@@ -179,9 +202,10 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
     else if (detail.kind === 'progetto') panel = <ProjectDetail ui={ui} rec={rec} onClose={close} />;
     else if (detail.kind === 'nota') panel = <NoteDetail ui={ui} rec={rec} onClose={close} />;
     else if (detail.kind === 'materia') panel = <SubjectDetail ui={ui} rec={rec} onClose={close} />;
+    else if (detail.kind === 'ispirazione') panel = <InspirationDetail ui={ui} rec={rec} onClose={close} />;
   }
 
-  const fabKind = tab === 'materie' ? 'materia' : tab === 'orario' ? 'lezione' : tab === 'progetti' ? 'progetto' : tab === 'appunti' ? 'nota' : tab === 'libri' ? 'libro' : actKind;
+  const fabKind = tab === 'ispirazione' ? 'ispirazione' : tab === 'materie' ? 'materia' : tab === 'orario' ? 'lezione' : tab === 'progetti' || (tab === 'panoramica' && c === 'scrittura') ? 'progetto' : tab === 'appunti' ? 'nota' : tab === 'libri' ? 'libro' : actKind;
 
   return (
     <main style={mobile ? { display: 'flex', flexDirection: 'column', gap: 14 } : { position: 'relative', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14, padding: '24px 26px 28px', overflowY: 'auto' }}>
@@ -196,7 +220,7 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
       {mobile && <button onClick={() => (fabKind === actKind ? newAct() : ui.openForm(fabKind))} aria-label="Aggiungi" style={fab}><i className="ph-bold ph-plus" style={{ fontSize: 24 }} /></button>}
       {panel}
       {form && <RecordForm def={form.def} rec={form.rec} mobile={mobile} onClose={() => setForm(null)} onSaved={form.onSaved}
-        onDelete={form.rec.id ? () => { st.trashIt(c, form.rec.id!); st.say('Spostato nel cestino.'); setForm(null); setDetail(null); } : undefined} />}
+        onDelete={form.rec.id ? () => { if (st.removeRec(c, form.rec.id!)) { setForm(null); setDetail(null); } } : undefined} />}
       {colsOpen && <ColumnsEditor c={c} mobile={mobile} onClose={() => setColsOpen(false)} />}
     </main>
   );
@@ -205,6 +229,7 @@ export function SectionPage({ c, mobile }: { c: Sec; mobile: boolean }) {
 /** Dettaglio di un'attività, con i collegamenti propri di ogni sezione. */
 function ActDetail({ ui, rec, onClose }: { ui: UI; rec: Rec; onClose: () => void }) {
   const st = useStore();
+  const act = useTaskActions();
   const c = ui.c;
   const def = kindDef(c, ACT_KIND[c]);
   const sessions = c === 'scuola' && PROVA.includes(rec.type) ? st.docs.scuola.filter((x) => x.kind === 'attivita' && x.linkedTo === rec.id) : [];
@@ -215,7 +240,9 @@ function ActDetail({ ui, rec, onClose }: { ui: UI; rec: Rec; onClose: () => void
     <Panel title={rec.title} kicker={catKicker(c)} mobile={ui.mobile} onClose={onClose}
       actions={<>
         <button className="btn btn-secondary" onClick={() => ui.openForm(def.kind, rec)} style={{ minHeight: 40 }}><i className="ph ph-pencil-simple" />Modifica</button>
-        <button className="btn btn-ghost" onClick={() => { st.trashIt(c, rec.id); st.say('Attività spostata nel cestino.'); onClose(); }} style={{ minHeight: 40, color: 'var(--color-urgent)' }}><i className="ph ph-trash" />Elimina</button>
+        <button className="btn btn-secondary" onClick={() => act.duplicate(c, rec.id)} style={{ minHeight: 40 }}><i className="ph ph-copy" />Duplica</button>
+        {rec.repeat && <button className="btn btn-secondary" onClick={() => { act.skip(c, rec.id); onClose(); }} style={{ minHeight: 40 }}><i className="ph ph-skip-forward" />Salta questa volta</button>}
+        <button className="btn btn-ghost" onClick={() => { st.trashIt(c, rec.id); onClose(); }} style={{ minHeight: 40, color: 'var(--color-urgent)' }}><i className="ph ph-trash" />Elimina</button>
       </>}>
       <SubTitle>Stato</SubTitle>
       <StatusPills c={c} rec={rec} />

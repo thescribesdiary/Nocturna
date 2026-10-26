@@ -3,9 +3,13 @@ import { ACT_KIND, Rec, isDone, visibleCols } from '../data/sections';
 import { useStore } from '../data/store';
 import { useTaskActions } from '../data/actions';
 import { DAYS, Field, KindDef, Opt, getP, optLabel, setP } from '../data/schema';
-import { pill } from './ui';
+import { QuickDates, pill } from './ui';
+import { Corners } from './Ornaments';
+import { PlanEditor, PlanRow, initPlan, savePlan } from './PlanEditor';
 
 const META = ['id', 'createdAt', 'updatedAt', 'notifyAt', 'notifyQueue', 'notifyKinds', 'notifiedAt', 'deletedAt'];
+const QUICK = ['date', 'due', 'start', 'deadline', 'agreed'];
+const WD: [string, string][] = [['1', 'Lun'], ['2', 'Mar'], ['3', 'Mer'], ['4', 'Gio'], ['5', 'Ven'], ['6', 'Sab'], ['0', 'Dom']];
 const REPEAT: Opt[] = [['', 'Mai'], ['giorno', 'Ogni giorno'], ['settimana', 'Ogni settimana'], ['mese', 'Ogni mese']];
 
 /** Ridimensiona un'immagine a `w` px di larghezza in JPEG (copertine ~240 px, avatar quadrati 160 px). */
@@ -36,8 +40,12 @@ export function resizeImage(file: File, w: number, square = false): Promise<stri
   });
 }
 
-export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
+export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete, top, onDraft }: {
   def: KindDef; rec: Partial<Rec>; mobile: boolean; onClose: () => void; onSaved?: (id: string) => void; onDelete?: () => void;
+  /** Contenuto mostrato sotto il titolo (es. la scelta dell'area nel Calendario generale). */
+  top?: React.ReactNode;
+  /** Riceve la bozza a ogni modifica, per conservare il titolo se si cambia area. */
+  onDraft?: (f: Rec) => void;
 }) {
   const st = useStore();
   const act = useTaskActions();
@@ -48,14 +56,26 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
     if (isAct && !base.status) base.status = visibleCols(st.cols, def.section)[0].id;
     return base;
   });
-  const [orig] = useState(() => JSON.stringify(f));
+  const isBook = def.section === 'lettura' && def.kind === 'libro';
+  const [plan, setPlan] = useState<PlanRow[]>(() => (isBook ? initPlan(st, rec.id) : []));
+  const [orig] = useState(() => JSON.stringify(f) + JSON.stringify(plan));
   const [open, setOpen] = useState<Record<number, boolean>>({});
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  const set = (k: string, v: any) => { setF((x) => setP(x, k, v)); setConfirmClose(false); };
+  const set = (k: string, v: any) => {
+    setF((x) => {
+      let n = setP(x, k, v);
+      // «Volume completato» e «Volume annullato» si escludono a vicenda.
+      if (k === 'volDone' && v) n = { ...n, volCancelled: false };
+      if (k === 'volCancelled' && v) n = { ...n, volDone: false };
+      onDraft?.(n);
+      return n;
+    });
+    setConfirmClose(false);
+  };
 
   const close = () => {
-    if (JSON.stringify(f) !== orig && !confirmClose) { setConfirmClose(true); return; }
+    if (JSON.stringify(f) + JSON.stringify(plan) !== orig && !confirmClose) { setConfirmClose(true); return; }
     onClose();
   };
   const save = () => {
@@ -79,7 +99,8 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
       st.update(def.section, id, { ...data, ...(becameDone ? { prevStatus: old.status } : {}) });
       if (becameDone) act.spawnNext(def.section, { ...old, ...data, id });
     }
-    st.say(isNew ? 'Salvato.' : 'Modifiche salvate.');
+    const planN = isBook ? savePlan(st, act.setStatus, id, { ...data, id } as Rec, plan) : 0;
+    st.say((isNew ? 'Salvato.' : 'Modifiche salvate.') + (planN ? ' Piano editoriale aggiornato.' : ''));
     onSaved?.(id);
     onClose();
   };
@@ -93,7 +114,7 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
     const v = getP(f, fl.k);
     const wrap = (el: React.ReactNode) => (
       <div key={fl.k} className="field" style={{ gridColumn: fl.half ? undefined : '1 / -1', margin: 0, minWidth: 0 }}>
-        <label style={lab}>{fl.label}</label>{el}
+        <label style={lab}>{fl.labelFn ? fl.labelFn(f) : fl.label}</label>{el}
         {fl.hint && <span style={{ fontSize: 12.5, color: 'var(--color-neutral-400)' }}>{fl.hint}</span>}
       </div>
     );
@@ -112,7 +133,7 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
       case 'textarea':
         return wrap(<textarea className="input" value={v ?? ''} placeholder={fl.ph} onChange={(e) => set(fl.k, e.target.value)} style={{ minHeight: 76, resize: 'vertical', fontSize: mobile ? 16 : 15, fontFamily: 'inherit', lineHeight: 1.45 }} />);
       case 'date': case 'time': case 'month':
-        return wrap(<input className="input" type={fl.t} value={v ?? ''} onChange={(e) => set(fl.k, e.target.value)} style={{ ...big, colorScheme: 'dark' }} />);
+        return wrap(<><input className="input" type={fl.t} value={v ?? ''} onChange={(e) => set(fl.k, e.target.value)} style={big} />{fl.t === 'date' && QUICK.includes(fl.k) && <QuickDates big={mobile} onPick={(k) => set(fl.k, k)} />}</>);
       case 'choice':
         return wrap(pills(optsOf(fl), (o) => v === o[0], (o) => set(fl.k, o[0])));
       case 'multi': {
@@ -120,9 +141,14 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
         return wrap(pills(optsOf(fl), (o) => arr.includes(o[0]), (o) => set(fl.k, arr.includes(o[0]) ? arr.filter((x) => x !== o[0]) : [...arr, o[0]])));
       }
       case 'select': {
-        const opts = optsOf(fl);
+        const opts = optsOf(fl).slice();
+        // Un collegamento a un elemento non più in elenco (es. libro chiuso) resta visibile.
+        if (v && !opts.some((o) => o[0] === v)) {
+          const hit = Object.values(st.docs).flat().find((x) => x.id === v);
+          opts.unshift([v, (hit?.title || hit?.name || 'Elemento collegato') + ' (chiuso)']);
+        }
         return wrap(
-          <select className="input" value={v ?? ''} onChange={(e) => set(fl.k, e.target.value || null)} style={{ ...big, colorScheme: 'dark' }}>
+          <select className="input" value={v ?? ''} onChange={(e) => set(fl.k, e.target.value || null)} style={big}>
             <option value="">— Nessuno —</option>
             {opts.map((o) => <option key={o[0]} value={o[0]}>{o[1]}</option>)}
           </select>,
@@ -133,6 +159,18 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
       case 'repeat':
         return wrap(<>
           {pills(REPEAT.map((o) => [o[0], o[1], 'ph-repeat'] as Opt), (o) => (v || '') === o[0], (o) => set(fl.k, o[0]))}
+          {v === 'settimana' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+              <span style={{ fontSize: 12.5, color: 'var(--color-neutral-400)' }}>Nei giorni (facoltativo, es. lunedì e giovedì)</span>
+              {pills(WD.map(([a, b]) => [a, b] as Opt), (o) => (f.repeatDays || []).includes(o[0]), (o) => { const a: string[] = f.repeatDays || []; set('repeatDays', a.includes(o[0]) ? a.filter((x) => x !== o[0]) : [...a, o[0]]); }, false)}
+            </div>
+          )}
+          {!!v && (
+            <div style={{ marginTop: 6 }}>
+              <label style={lab}>Fino al (facoltativo)</label>
+              <input className="input" type="date" value={f.repeatUntil ?? ''} onChange={(e) => set('repeatUntil', e.target.value)} style={big} />
+            </div>
+          )}
           {!!v && <span style={{ fontSize: 12.5, color: 'var(--color-neutral-400)' }}>Quando la completi, la prossima viene creata in automatico.</span>}
         </>);
       case 'bool':
@@ -155,11 +193,11 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
       case 'image':
         return wrap(
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 64, height: 92, flex: 'none', borderRadius: 6, background: v ? `url(${v}) center/cover` : 'color-mix(in srgb, var(--color-text) 6%, transparent)', boxShadow: 'var(--shadow-sm)', display: 'grid', placeItems: 'center', color: 'var(--color-neutral-500)' }}>{!v && <i className="ph ph-book" style={{ fontSize: 22 }} />}</div>
+            <div style={{ width: fl.w === 1200 ? 110 : 64, height: fl.w === 1200 ? 82 : 92, flex: 'none', borderRadius: 6, background: v ? `url(${v}) center/cover` : 'color-mix(in srgb, var(--color-text) 6%, transparent)', boxShadow: 'var(--shadow-sm)', display: 'grid', placeItems: 'center', color: 'var(--color-neutral-500)' }}>{!v && <i className={'ph ' + (fl.icon || 'ph-book')} style={{ fontSize: 22 }} />}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label className="btn btn-secondary" style={{ minHeight: 40, position: 'relative', cursor: 'pointer' }}>
                 <i className="ph ph-upload-simple" />{v ? 'Cambia immagine' : 'Scegli immagine'}
-                <input type="file" accept="image/*" onChange={async (e) => { const file = e.target.files?.[0]; if (file) { try { set(fl.k, await resizeImage(file, 240)); } catch { st.say('Immagine non valida.'); } } }} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+                <input type="file" accept="image/*" onChange={async (e) => { const file = e.target.files?.[0]; if (file) { try { set(fl.k, await resizeImage(file, fl.w || 240)); } catch { st.say('Immagine non valida.'); } } }} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
               </label>
               {v && <button type="button" className="btn btn-ghost" onClick={() => set(fl.k, '')} style={{ color: 'var(--color-neutral-300)', minHeight: 32 }}>Rimuovi</button>}
             </div>
@@ -186,6 +224,7 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
     );
   });
 
+  const planBox = isBook ? <PlanEditor st={st} rows={plan} setRows={setPlan} mobile={mobile} /> : null;
   const heading = isNew ? def.newLabel : def.editLabel;
   const actions = (
     <>
@@ -209,16 +248,21 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete }: {
   if (mobile)
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', background: 'color-mix(in srgb, var(--color-sidebar) 70%, transparent)' }}>
-        <div role="dialog" aria-modal="true" aria-label={heading} style={{ maxHeight: '92%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, padding: '10px 18px calc(env(safe-area-inset-bottom, 0px) + 24px)', borderRadius: '22px 22px 0 0', background: 'var(--color-surface)', boxShadow: 'var(--shadow-lg)' }}>
-          <span style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, background: 'var(--color-neutral-700)' }} />
-          {head}{body}{actions}
+        <div role="dialog" aria-modal="true" aria-label={heading} style={{ maxHeight: '92%', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '22px 22px 0 0', background: 'var(--color-surface)', boxShadow: 'var(--shadow-lg)' }}>
+          {/* Gli angoli restano fermi sul bordo del pannello: scorre solo il contenuto. */}
+          <Corners size={30} inset={8} />
+          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, padding: '10px 18px calc(env(safe-area-inset-bottom, 0px) + 24px)' }}>
+            <span style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, background: 'var(--color-neutral-700)' }} />
+            {head}{top}{body}{planBox}{actions}
+          </div>
         </div>
       </div>
     );
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'grid', placeItems: 'center', padding: 20, background: 'color-mix(in srgb, var(--color-sidebar) 70%, transparent)' }} onKeyDown={(e) => e.key === 'Escape' && close()}>
-      <div role="dialog" aria-modal="true" aria-label={heading} className="dialog" style={{ width: 'min(560px,100%)', maxHeight: '100%', overflowY: 'auto', gap: 16 }}>
-        {head}{body}{actions}
+      <div role="dialog" aria-modal="true" aria-label={heading} className="dialog" style={{ width: 'min(560px,100%)', maxHeight: '100%', overflow: 'hidden', padding: 0, gap: 0 }}>
+        <Corners size={36} inset={5} />
+        <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, padding: 'var(--space-4)' }}>{head}{top}{body}{planBox}{actions}</div>
       </div>
     </div>
   );

@@ -26,7 +26,7 @@ export async function exportBackup(uid: string) {
     });
     n += data[s].length;
   }
-  const json = JSON.stringify({ app: 'Nocturna', version: 1, exportedAt: new Date().toISOString(), data }, null, 1);
+  const json = JSON.stringify({ app: 'Nocturna', version: 2, exportedAt: new Date().toISOString(), data }, null, 1);
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;

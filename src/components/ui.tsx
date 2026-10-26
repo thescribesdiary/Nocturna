@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Frieze } from './Ornaments';
 
 export const tint = (c: string, p = 16) => `color-mix(in srgb, ${c} ${p}%, transparent)`;
 
@@ -61,6 +62,18 @@ export const pill = (a: boolean, color?: string) => ({
   color: a ? 'var(--color-text)' : 'var(--color-neutral-300)',
 });
 
+/** Pulsanti «Oggi / Domani / +1 settimana» accanto a un campo data. */
+export function QuickDates({ onPick, big }: { onPick: (k: string) => void; big?: boolean }) {
+  const k = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+      {([['Oggi', 0], ['Domani', 1], ['+1 settimana', 7]] as [string, number][]).map(([l, n]) => (
+        <button key={l} type="button" onClick={() => onPick(k(n))} style={{ minHeight: big ? 36 : 28, padding: '2px 10px', borderRadius: 999, border: '1px solid var(--color-divider)', background: 'transparent', color: 'var(--color-neutral-300)', font: 'inherit', fontSize: 13, cursor: 'pointer' }}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
 export function Dot({ c, s = 8 }: { c: string; s?: number }) {
   return <span style={{ width: s, height: s, borderRadius: '50%', background: c, flex: 'none', display: 'inline-block' }} />;
 }
@@ -90,5 +103,8 @@ export function hScroll(el: HTMLElement | null) {
 }
 
 export const H1: React.FC<{ children: React.ReactNode; size?: number }> = ({ children, size = 44 }) => (
-  <h1 className="gothic" style={{ fontSize: size, lineHeight: 0.95, margin: 0 }}>{children}</h1>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+    <h1 className="gothic" style={{ fontSize: size, lineHeight: 0.95, margin: 0 }}>{children}</h1>
+    <Frieze width={size > 40 ? 230 : 190} />
+  </div>
 );

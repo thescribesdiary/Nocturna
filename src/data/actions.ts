@@ -30,9 +30,20 @@ export function useTaskActions() {
     const date = dateOf(c, x);
     if (!date) return;
     const d = P(date);
-    const nd = x.repeat === 'giorno' ? add(d, 1) : x.repeat === 'settimana' ? add(d, 7) : addMonth(d, 1);
+    let nd = x.repeat === 'giorno' ? add(d, 1) : x.repeat === 'settimana' ? add(d, 7) : addMonth(d, 1);
+    // «Nei giorni»: la prossima è il primo giorno scelto dopo la data attuale (es. lunedì e giovedì).
+    const days: string[] = Array.isArray(x.repeatDays) ? x.repeatDays : [];
+    if (x.repeat === 'settimana' && days.length) {
+      nd = add(d, 1);
+      for (let i = 0; i < 7 && !days.includes(String(nd.getDay())); i++) nd = add(nd, 1);
+    }
+    if (x.repeatUntil && K(nd) > x.repeatUntil) {
+      update(c, x.id, { spawnedNext: true });
+      say('Ripetizione conclusa: la data di fine era ' + dayLong(P(x.repeatUntil)).toLowerCase() + '.');
+      return;
+    }
     const prev = x.prevStatus && !isDone(cols, c, x.prevStatus) ? x.prevStatus : reopenStatus(cols, c);
-    const { id, createdAt, updatedAt, deletedAt, notifyAt, notifyQueue, notifiedAt, spawnedNext, prevStatus, grade, ...rest } = x;
+    const { id, createdAt, updatedAt, deletedAt, notifyAt, notifyQueue, notifyKinds, notifiedAt, spawnedNext, prevStatus, grade, ...rest } = x as any;
     create(c, { ...rest, ...dateFieldPatch(c, x, K(nd)), status: prev, kind: x.kind } as Rec);
     update(c, x.id, { spawnedNext: true });
     say('Attività ricorrente: la prossima è ' + dayLong(nd).toLowerCase() + '.');
@@ -45,6 +56,32 @@ export function useTaskActions() {
     const wasDone = isDone(cols, c, x.status), nowDone = isDone(cols, c, status);
     update(c, id, { status, ...(nowDone && !wasDone ? { prevStatus: x.status } : {}) });
     if (nowDone && !wasDone) spawnNext(c, { ...x, status });
+  };
+
+  /** «Salta questa volta»: crea la prossima occorrenza e toglie questa (finisce nel cestino). */
+  const skip = (c: Section, id: string) => {
+    const x = find(c, id);
+    if (!x || !x.repeat) return;
+    spawnNext(c, { ...x, spawnedNext: false });
+    update(c, id, { deletedAt: Date.now(), spawnedNext: true });
+  };
+
+  /** Duplica un'attività: stessa scheda, titolo «(copia)», di nuovo da fare. */
+  const duplicate = (c: Section, id: string) => {
+    const x = find(c, id);
+    if (!x) return;
+    const { id: _i, createdAt, updatedAt, deletedAt, notifyAt, notifyQueue, notifyKinds, notifiedAt, spawnedNext, prevStatus, ...rest } = x as any;
+    const status = isDone(cols, c, x.status) ? reopenStatus(cols, c) : x.status;
+    create(c, { ...rest, title: (x.title || '') + ' (copia)', status, kind: x.kind } as Rec);
+    say('Attività duplicata.');
+  };
+
+  /** Sposta un'attività su un altro giorno (trascinamento nel calendario). */
+  const move = (t: HomeTask, date: string) => {
+    const x = find(t.cat, t.src);
+    if (!x || date === t.date) return;
+    update(t.cat, x.id, dateFieldPatch(t.cat, x, date));
+    say('Spostata a ' + dayLong(P(date)).toLowerCase() + '.');
   };
 
   const toggle = (t: HomeTask) => {
@@ -87,5 +124,5 @@ export function useTaskActions() {
     return true;
   };
 
-  return { toggle, setStatus, save, spawnNext };
+  return { toggle, setStatus, save, spawnNext, skip, duplicate, move };
 }

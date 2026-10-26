@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { configured, login } from '../firebase';
+import { ArchDivider, Corners } from '../components/Ornaments';
 
 export function Login({ error }: { error?: string }) {
   const [busy, setBusy] = useState(false);
@@ -12,10 +13,11 @@ export function Login({ error }: { error?: string }) {
   };
   return (
     <div style={{ minHeight: '100%', display: 'grid', placeItems: 'center', padding: 24, background: 'radial-gradient(700px 420px at 80% -10%, color-mix(in srgb, var(--color-accent-800) 36%, transparent), transparent 70%), var(--color-bg)' }}>
-      <div style={{ width: 'min(400px,100%)', display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ position: 'relative', width: 'min(430px,100%)', display: 'flex', flexDirection: 'column', gap: 18, padding: '40px 34px', border: '1px solid var(--color-divider)', borderRadius: 4, background: 'color-mix(in srgb, var(--color-surface) 70%, transparent)' }}>
+        <Corners size={46} inset={6} />
         <div>
           <div className="gothic" style={{ fontSize: 64, lineHeight: 0.9 }}>Nocturna</div>
-          <div style={{ width: 36, height: 2, background: 'var(--color-accent)', marginTop: 14 }} />
+          <div style={{ marginTop: 12 }}><ArchDivider width={230} /></div>
         </div>
         <p style={{ margin: 0, fontSize: 17, color: 'var(--color-neutral-300)', lineHeight: 1.5 }}>Scuola, lavoro, lettura e scrittura in un unico calendario, sincronizzato tra i tuoi dispositivi.</p>
         {configured ? (

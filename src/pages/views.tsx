@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { K, P, add, fmtS } from '../lib/dates';
-import { Rec, Section, dateOf, isDone } from '../data/sections';
+import { Rec, Section, dateOf, isDone, toHome } from '../data/sections';
 import { useStore } from '../data/store';
 import { useToday } from '../data/hooks';
-import { BST, COLLABS, DAYS, NK, PRIO4, PROVA, PSTAT, READER, W_PSTAT, kindDef, optLabel, collabWho } from '../data/schema';
+import { BST, COLLABS, DAYS, FORMATS, NK, PRIO4, PROVA, PSTAT, READER, W_PSTAT, bookClosed, kindDef, lChannelLabel, lTypeColor, optLabel, typeOf } from '../data/schema';
+import { copyBook, monthBooks, planOf } from '../data/books';
 import { ActCard, FieldList, Panel, SubTitle, catKicker } from '../components/Detail';
-import { pill } from '../components/ui';
+import { Seg, pill, tint } from '../components/ui';
+import { Rosette } from '../components/Ornaments';
 import type { UI } from './Section';
 
 const surface: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', border: 0, borderRadius: 10, background: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', color: 'var(--color-text)', font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0 };
@@ -13,7 +15,7 @@ const grid = (mobile: boolean): React.CSSProperties => ({ display: 'grid', gridT
 const muted = { fontSize: 14, color: 'var(--color-neutral-400)' } as const;
 const Empty = ({ icon, title, text, action }: { icon: string; title: string; text: string; action?: React.ReactNode }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '24px 0', maxWidth: 480 }}>
-    <i className={'ph ' + icon} style={{ fontSize: 34, color: 'var(--color-neutral-500)' }} />
+    <Rosette size={72} />
     <p style={{ fontSize: 16, margin: 0 }}>{title}</p>
     <p style={{ fontSize: 14.5, color: 'var(--color-neutral-400)', margin: 0 }}>{text}</p>
     {action}
@@ -31,9 +33,23 @@ const editDel = (ui: UI, kind: string, rec: Rec, onClose: () => void, st: Return
   <>
     <button className="btn btn-secondary" onClick={() => ui.openForm(kind, rec)} style={{ minHeight: 40 }}><i className="ph ph-pencil-simple" />Modifica</button>
     {extra}
-    <button className="btn btn-ghost" onClick={() => { st.trashIt(ui.c, rec.id); st.say('Spostato nel cestino.'); onClose(); }} style={{ minHeight: 40, color: 'var(--color-urgent)' }}><i className="ph ph-trash" />Elimina</button>
+    <button className="btn btn-ghost" onClick={() => { if (st.removeRec(ui.c, rec.id)) onClose(); }} style={{ minHeight: 40, color: 'var(--color-urgent)' }}><i className="ph ph-trash" />Elimina</button>
   </>
 );
+const href = (u: string) => (/^https?:\/\//i.test(u.trim()) ? u.trim() : 'https://' + u.trim());
+const host = (u: string) => { try { return new URL(href(u)).hostname.replace(/^www\./, ''); } catch { return u; } };
+/** «7», «7½», «7+», «6,5» → numero. */
+const gradeNum = (s: any) => {
+  let t = String(s ?? '').trim().replace(',', '.'), a = 0;
+  if (t.includes('½')) { t = t.replace('½', ''); a = 0.5; }
+  if (/\+$/.test(t)) { t = t.slice(0, -1); a = 0.25; } else if (/[-–]$/.test(t)) { t = t.slice(0, -1); a = -0.25; }
+  const n = parseFloat(t);
+  return isNaN(n) ? NaN : n + a;
+};
+const average = (acts: Rec[]) => {
+  const v = acts.map((x) => gradeNum(x.grade?.value)).filter((n) => !isNaN(n));
+  return v.length ? { mean: (v.reduce((s, n) => s + n, 0) / v.length).toFixed(2).replace('.', ','), n: v.length } : null;
+};
 const actsOf = (st: ReturnType<typeof useStore>, c: Section) => st.docs[c].filter((x) => x.kind === (c === 'lavoro' ? 'task' : 'attivita'));
 const byWhen = (c: Section) => (a: Rec, b: Rec) => (dateOf(c, a) || '9999').localeCompare(dateOf(c, b) || '9999');
 
@@ -53,10 +69,12 @@ export function SubjectsView({ ui }: { ui: UI }) {
             const open = a.filter((x) => !isDone(st.cols, 'scuola', x.status)).length;
             const next = a.filter((x) => PROVA.includes(x.type) && !isDone(st.cols, 'scuola', x.status) && dateOf('scuola', x) >= today).sort(byWhen('scuola'))[0];
             const grades = a.filter((x) => x.grade?.value);
+            const av = average(grades);
             return (
               <button key={s.id} onClick={() => ui.openDetail('materia', s.id)} style={surface}>
                 <span style={{ fontSize: 18, fontWeight: 500 }}>{s.name}</span>
                 <span style={muted}>{open} attività aperte{grades.length ? ' · ' + grades.length + (grades.length === 1 ? ' voto' : ' voti') : ''}</span>
+                {av && <span style={{ fontSize: 14, color: 'var(--color-neutral-200)' }}>Media: {av.mean}</span>}
                 {next && <span style={{ fontSize: 14, color: 'var(--color-accent-300)' }}>Prossima prova: {fmtS(dateOf('scuola', next))}</span>}
               </button>
             );
@@ -71,9 +89,11 @@ export function SubjectDetail({ ui, rec, onClose }: { ui: UI; rec: Rec; onClose:
   const st = useStore();
   const acts = actsOf(st, 'scuola').filter((x) => x.subject === rec.id).sort(byWhen('scuola'));
   const prove = acts.filter((x) => PROVA.includes(x.type)), sess = acts.filter((x) => x.type === 'studio'), other = acts.filter((x) => !PROVA.includes(x.type) && x.type !== 'studio');
+  const av = average(acts.filter((x) => x.grade?.value));
   const list = (t: string, a: Rec[]) => a.length > 0 && <><SubTitle>{t}</SubTitle>{a.map((x) => <ActCard key={x.id} c="scuola" rec={x} onClick={() => ui.openDetail('attivita', x.id)} />)}</>;
   return (
     <Panel title={rec.name} kicker={catKicker('scuola', 'Materia')} mobile={ui.mobile} onClose={onClose} actions={editDel(ui, 'materia', rec, onClose, st)}>
+      {av && <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '10px 12px', borderRadius: 10, background: tint('var(--cat-scuola)', 12) }}><span className="gothic" style={{ fontSize: 34, lineHeight: 1 }}>{av.mean}</span><span style={muted}>media su {av.n} {av.n === 1 ? 'voto' : 'voti'}</span></div>}
       {list('Verifiche e interrogazioni', prove)}
       {list('Sessioni di studio', sess)}
       {list('Altre attività', other)}
@@ -157,8 +177,9 @@ export function LavoroOverview({ ui }: { ui: UI }) {
 export function LetturaOverview({ ui }: { ui: UI }) {
   const st = useStore();
   const today = useToday(), soon = K(add(P(today), 14));
-  const books = st.docs.lettura.filter((x) => x.kind === 'libro');
-  const open = actsOf(st, 'lettura').filter((x) => !isDone(st.cols, 'lettura', x.status));
+  const books = st.docs.lettura.filter((x) => x.kind === 'libro' && !bookClosed(x));
+  const closedIds = new Set(st.docs.lettura.filter((x) => x.kind === 'libro' && bookClosed(x)).map((x) => x.id));
+  const open = actsOf(st, 'lettura').filter((x) => !isDone(st.cols, 'lettura', x.status) && !(x.book && closedIds.has(x.book)));
   const reading = books.filter((b) => b.status === 'inlettura');
   const next = books.filter((b) => b.status === 'daleggere' && (b.tbr || b.deadlineMode !== 'nessuna')).slice(0, 6);
   const deadlines = books.filter((b) => b.status !== 'completato' && ((b.deadlineMode === 'data' && b.deadline && b.deadline <= soon) || (b.deadlineMode === 'mese' && b.deadlineMonth && b.deadlineMonth <= today.slice(0, 7))));
@@ -220,6 +241,7 @@ export function ProjectsView({ ui }: { ui: UI }) {
             const s = stat.find((x) => x[0] === p.status);
             return (
               <button key={p.id} onClick={() => ui.openDetail('progetto', p.id)} style={{ ...surface, opacity: p.status === 'archiviato' ? 0.6 : 1 }}>
+                {!isL && p.cover && <span style={{ height: 130, borderRadius: 6, background: `url(${p.cover}) center/cover` }} />}
                 <span style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><span style={{ fontSize: 18, fontWeight: 500, flex: 1 }}>{p.name || p.title}</span></span>
                 <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {s && <Tag color={s[2]}>{s[1]}</Tag>}
@@ -233,7 +255,7 @@ export function ProjectsView({ ui }: { ui: UI }) {
             );
           })}
         </div>
-      ) : <Empty icon="ph-folders" title="Nessun progetto" text={isL ? 'Crea un progetto per raggruppare attività, scadenze e note.' : 'Aggiungi storie, raccolte e altri progetti narrativi.'} action={<AddBtn label="Crea un progetto" onClick={() => ui.openForm('progetto')} />} />}
+      ) : <Empty icon="ph-folders" title="Nessun progetto" text={isL ? 'Crea un progetto per raggruppare attività, scadenze e note.' : 'Aggiungi storie, raccolte e altri progetti narrativi.'} />}
     </div>
   );
 }
@@ -244,12 +266,15 @@ export function ProjectDetail({ ui, rec, onClose }: { ui: UI; rec: Rec; onClose:
   const acts = actsOf(st, c).filter((x) => x.project === rec.id).sort(byWhen(c));
   const notes = isL ? st.docs.lavoro.filter((x) => x.kind === 'nota' && x.project === rec.id) : [];
   const archived = rec.status === 'archiviato';
+  const inspo = c === 'scrittura' ? st.docs.scrittura.filter((x) => x.kind === 'ispirazione' && x.project === rec.id) : [];
   return (
     <Panel title={rec.name || rec.title} kicker={catKicker(c, 'Progetto')} mobile={ui.mobile} onClose={onClose}
       actions={editDel(ui, 'progetto', rec, onClose, st, isL && (
         <button className="btn btn-secondary" onClick={() => { st.update(c, rec.id, archived ? { status: rec.prevStatus || 'attivo' } : { status: 'archiviato', prevStatus: rec.status }); st.say(archived ? 'Progetto ripristinato.' : 'Progetto archiviato. Le sue attività restano nel Kanban.'); }} style={{ minHeight: 40 }}><i className="ph ph-archive" />{archived ? 'Ripristina' : 'Archivia'}</button>
       ))}>
-      <FieldList def={kindDef(c, 'progetto')} rec={rec} skip={['name', 'title']} />
+      {rec.cover && <img src={rec.cover} alt={'Copertina di ' + (rec.title || rec.name)} style={{ width: 140, borderRadius: 6, boxShadow: 'var(--shadow-md)' }} />}
+      <FieldList def={kindDef(c, 'progetto')} rec={rec} skip={['name', 'title', 'cover']} />
+      {!isL && inspo.length > 0 && <><SubTitle>Ispirazione</SubTitle>{inspo.map((n) => <button key={n.id} onClick={() => ui.openDetail('ispirazione', n.id)} style={{ ...surface, flexDirection: 'row', alignItems: 'center', gap: 10 }}><span style={{ width: 44, height: 44, flex: 'none', borderRadius: 6, background: n.image ? `url(${n.image}) center/cover` : tint('var(--cat-scrittura)', 16) }} /><span style={{ fontSize: 15 }}>{n.title}</span></button>)}</>}
       <SubTitle>Attività collegate</SubTitle>
       {acts.map((x) => <ActCard key={x.id} c={c} rec={x} onClick={() => ui.openDetail(isL ? 'task' : 'attivita', x.id)} />)}
       {!acts.length && <p style={{ margin: 0, ...muted }}>Nessuna attività collegata.</p>}
@@ -321,10 +346,13 @@ export function BooksView({ ui }: { ui: UI }) {
   const today = useToday();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<string[]>([]);
-  const [only, setOnly] = useState<'' | 'tbr' | 'collab'>('');
+  const [only, setOnly] = useState<'' | 'tbr' | 'collab' | 'chiusi'>('');
+  const [mode, setModeS] = useState<'schede' | 'copertine' | 'elenco' | 'delegati'>(() => { try { return (localStorage.getItem('nocturna-books-view') as any) || 'schede'; } catch { return 'schede'; } });
+  const setMode = (m: typeof mode) => { setModeS(m); try { localStorage.setItem('nocturna-books-view', m); } catch {} };
   const books = st.docs.lettura.filter((x) => x.kind === 'libro')
     .filter((b) => !status.length || status.includes(b.status as string))
-    .filter((b) => only === '' || (only === 'tbr' ? b.tbr : b.collabType && b.collabType !== 'nessuna'))
+    .filter((b) => (only === 'chiusi' ? bookClosed(b) : !bookClosed(b)))
+    .filter((b) => only === '' || only === 'chiusi' || (only === 'tbr' ? b.tbr : b.collabType && b.collabType !== 'nessuna'))
     .filter((b) => !q.trim() || [b.title, b.author, b.genre, b.publisher, b.collabName].join(' ').toLowerCase().includes(q.trim().toLowerCase()))
     .sort((a, b) => a.title.localeCompare(b.title));
   const chip = (a: boolean, onClick: () => void, label: string, color?: string) => <button key={label} onClick={onClick} aria-pressed={a} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: ui.mobile ? 40 : 32, padding: '4px 11px', borderRadius: 999, ...pill(a, color), font: 'inherit', fontSize: 14, cursor: 'pointer' }}>{color && <span style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />}{label}</button>;
@@ -335,37 +363,114 @@ export function BooksView({ ui }: { ui: UI }) {
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca titolo, autore, genere…" aria-label="Cerca libri" style={{ flex: ui.mobile ? '1 1 100%' : '0 1 300px', minHeight: ui.mobile ? 44 : 36 }} />
         {chip(only === 'tbr', () => setOnly(only === 'tbr' ? '' : 'tbr'), 'TBR')}
         {chip(only === 'collab', () => setOnly(only === 'collab' ? '' : 'collab'), 'Collaborazioni')}
+        {chip(only === 'chiusi', () => setOnly(only === 'chiusi' ? '' : 'chiusi'), 'Completati e annullati')}
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {BST.map(([v, l, c]) => chip(status.includes(v), () => setStatus(status.includes(v) ? status.filter((x) => x !== v) : [...status, v]), l, c))}
         {(status.length > 0 || only || q) && <button className="btn btn-ghost" onClick={() => { setStatus([]); setOnly(''); setQ(''); }} style={{ color: 'var(--color-accent-300)' }}>Azzera filtri</button>}
       </div>
-      {books.length ? (
-        <div style={{ display: 'grid', gridTemplateColumns: ui.mobile ? '1fr' : 'repeat(auto-fill,minmax(300px,1fr))', gap: 10 }}>
-          {books.map((b) => {
-            const s = BST.find((x) => x[0] === b.status);
-            const n = st.docs.lettura.filter((x) => x.kind === 'attivita' && x.book === b.id).length;
-            return (
-              <button key={b.id} onClick={() => ui.openDetail('libro', b.id)} style={{ ...surface, flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
-                <span style={{ width: 58, height: 86, flex: 'none', borderRadius: 5, background: b.cover ? `url(${b.cover}) center/cover` : 'color-mix(in srgb, var(--cat-lettura) 16%, transparent)', display: 'grid', placeItems: 'center', color: 'var(--cat-lettura)' }}>{!b.cover && <i className="ph ph-book" style={{ fontSize: 22 }} />}</span>
-                <span style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-                  <span style={{ fontSize: 16.5, fontWeight: 500, lineHeight: 1.25 }}>{b.title}</span>
-                  <span style={{ fontSize: 14, color: 'var(--color-neutral-400)' }}>{b.author}</span>
-                  <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                    {s && <Tag color={s[2]}>{s[1]}</Tag>}
-                    {b.tbr && <Tag>TBR</Tag>}
-                    {b.collabType && b.collabType !== 'nessuna' && <Tag>{optLabel(COLLABS, b.collabType)}</Tag>}
-                    {b.reader === 'delegato' && <Tag>Delegato{b.delegate ? ': ' + b.delegate : ''}</Tag>}
-                    {b.deadlineMode === 'data' && b.deadline && <Tag color={b.deadline < today && b.status !== 'completato' ? 'var(--color-urgent)' : undefined}>Entro {fmtS(b.deadline)}</Tag>}
-                    {b.deadlineMode === 'mese' && b.deadlineMonth && <Tag>Entro {b.deadlineMonth}</Tag>}
-                    {n > 0 && <Tag>{n} attività</Tag>}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
+      <Seg label="Vista dei libri" value={mode} onChange={setMode} opts={[['schede', 'Schede'], ['copertine', 'Copertine'], ['elenco', 'Elenco'], ['delegati', 'Delegati']]} />
+      {books.length && mode !== 'schede' ? <BooksAlt ui={ui} books={books} mode={mode} /> : books.length ? (
+        <div style={{ display: 'grid', gridTemplateColumns: ui.mobile ? '1fr' : 'repeat(auto-fill,minmax(340px,1fr))', gap: 12, alignItems: 'start' }}>
+          {books.map((b) => <BookCard key={b.id} ui={ui} b={b} today={today} />)}
         </div>
       ) : <Empty icon="ph-books" title="Nessun libro" text="Aggiungi i libri da leggere, quelli in lettura e le collaborazioni." action={<AddBtn label="Aggiungi un libro" onClick={() => ui.openForm('libro', { added: today })} />} />}
+    </div>
+  );
+}
+
+/** Scheda di un libro: dati principali, piano editoriale e azioni rapide (come nella Libreria). */
+function BookCard({ ui, b, today }: { ui: UI; b: Rec; today: string }) {
+  const st = useStore();
+  const s = BST.find((x) => x[0] === b.status);
+  const plan = planOf(st, b.id);
+  const done = plan.filter((x) => isDone(st.cols, 'lettura', x.status)).length;
+  const fmt = FORMATS.find((x) => x[0] === b.format);
+  const reader = b.reader === 'delegato' ? 'Delegato' + (b.delegate ? ': ' + b.delegate : '') : b.reader === 'nessuno' ? 'Solo segnalazione' : 'Letto da me';
+  const toggle = (k: 'volDone' | 'volCancelled') => {
+    const on = !b[k];
+    st.update('lettura', b.id, { [k]: on, ...(on ? { [k === 'volDone' ? 'volCancelled' : 'volDone']: false } : {}) });
+    st.say(on ? (k === 'volDone' ? 'Volume completato: non compare più in panoramica e calendari.' : 'Volume annullato: non compare più in panoramica e calendari.') : 'Volume riaperto.', () => st.update('lettura', b.id, { [k]: !on }));
+  };
+  const act = (icon: string, label: string, onClick: () => void, opts: { on?: boolean; danger?: boolean } = {}) => (
+    <button className="btn btn-ghost" onClick={onClick} aria-pressed={opts.on} style={{ minHeight: ui.mobile ? 42 : 34, padding: '4px 10px', fontSize: 14, color: opts.danger ? 'var(--color-urgent)' : opts.on ? 'var(--color-accent-200)' : 'var(--color-neutral-200)', background: opts.on ? 'color-mix(in srgb, var(--color-accent) 16%, transparent)' : undefined }}><i className={'ph ' + icon} />{label}</button>
+  );
+  return (
+    <article style={{ ...surface, cursor: 'default', gap: 10, opacity: bookClosed(b) ? 0.75 : 1 }}>
+      <button onClick={() => ui.openDetail('libro', b.id)} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: 0, border: 0, background: 'none', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+        <span style={{ width: 64, height: 96, flex: 'none', borderRadius: 5, boxShadow: 'var(--shadow-sm)', background: b.cover ? `url(${b.cover}) center/cover` : `linear-gradient(160deg, ${tint('var(--cat-lettura)', 26)}, ${tint('var(--cat-lettura)', 8)})`, display: 'grid', placeItems: 'center', color: 'var(--cat-lettura)' }}>{!b.cover && <i className={'ph ' + (fmt?.[2] || 'ph-book')} style={{ fontSize: 24 }} />}</span>
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          {fmt && <span style={{ fontSize: 12.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--cat-lettura)' }}>{fmt[1].replace(/ \(.*\)/, '')}</span>}
+          <span style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.25 }}>{b.title}</span>
+          <span style={{ fontSize: 14, color: 'var(--color-neutral-400)' }}>{b.author}{b.publisher ? ' · ' + b.publisher : ''}</span>
+          <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap', paddingTop: 2 }}>
+            {b.volDone && <Tag color="#86a58f">Volume completato</Tag>}
+            {b.volCancelled && <Tag color="var(--color-urgent)">Volume annullato</Tag>}
+            {s && <Tag color={s[2]}>{s[1]}</Tag>}
+            {b.tbr && <Tag>TBR</Tag>}
+            {b.collabType && b.collabType !== 'nessuna' && <Tag>{optLabel(COLLABS, b.collabType)}</Tag>}
+          </span>
+        </span>
+      </button>
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 14, color: 'var(--color-neutral-300)' }}>
+        <span><i className="ph ph-user" style={{ color: 'var(--color-neutral-500)' }} /> {reader}</span>
+        {b.received && <span><i className="ph ph-package" style={{ color: 'var(--color-neutral-500)' }} /> Ricevuto il {fmtS(b.received)}</span>}
+        {b.deadlineMode === 'data' && b.deadline && <span style={{ color: b.deadline < today && b.status !== 'completato' ? 'var(--color-urgent)' : undefined }}><i className="ph ph-calendar-check" style={{ color: 'var(--color-neutral-500)' }} /> Scadenza di lettura: {fmtS(b.deadline)}</span>}
+        {b.deadlineMode === 'mese' && b.deadlineMonth && <span><i className="ph ph-calendar-dots" style={{ color: 'var(--color-neutral-500)' }} /> Da leggere entro {monthName(b.deadlineMonth)}</span>}
+      </span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, color: 'var(--color-neutral-200)' }}><i className="ph ph-lightning" style={{ color: 'var(--color-accent-300)' }} />Piano editoriale ({done}/{plan.length} completate)</span>
+        {plan.map((x) => {
+          const t = typeOf('lettura', x.type), d = isDone(st.cols, 'lettura', x.status);
+          return (
+            <button key={x.id} onClick={() => ui.openDetail('attivita', x.id)} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto', alignItems: 'center', gap: 8, padding: '7px 10px', border: 0, borderRadius: 8, background: 'color-mix(in srgb, var(--color-text) 5%, transparent)', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer', opacity: d ? 0.6 : 1 }}>
+              <i className={'ph ' + (t[2] || 'ph-bookmark-simple')} style={{ color: lTypeColor(x.type), fontSize: 16 }} />
+              <span style={{ fontSize: 14, minWidth: 0, textDecoration: d ? 'line-through' : 'none' }}>{t[1].replace(/ \(.*\)/, '')}{x.channels?.length ? ' (' + x.channels.map(lChannelLabel).join(', ') + ')' : ''}</span>
+              <span style={{ fontSize: 13, color: 'var(--color-neutral-400)' }}>{x.date ? fmtS(x.date) : 'senza data'}</span>
+            </button>
+          );
+        })}
+        {!plan.length && <span style={{ fontSize: 13.5, color: 'var(--color-neutral-500)' }}>Nessuna attività: aggiungile da «Modifica».</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', borderTop: '1px solid var(--color-divider)', paddingTop: 8 }}>
+        {act('ph-pencil-simple', 'Modifica', () => ui.openForm('libro', b))}
+        {act(b.volDone ? 'ph-check-circle' : 'ph-circle', b.volDone ? 'Completato' : 'Completa', () => toggle('volDone'), { on: !!b.volDone })}
+        {act('ph-copy', 'Copia', () => copyBook(st, b))}
+        {act('ph-prohibit', b.volCancelled ? 'Annullato' : 'Annulla', () => toggle('volCancelled'), { on: !!b.volCancelled })}
+        {act('ph-trash', 'Elimina', () => st.removeRec('lettura', b.id), { danger: true })}
+      </div>
+    </article>
+  );
+}
+const monthName = (m: string) => { const [y, mm] = m.split('-'); return ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'][+mm - 1] + ' ' + y; };
+
+/** Riquadri sotto il calendario di Lettura: libri «entro il mese», legenda dei tipi, spiegazione della griglia. */
+export function LetturaCalendarExtras({ month, onBook, mobile, legend = true }: { month: string; onBook: (id: string) => void; mobile: boolean; legend?: boolean }) {
+  const st = useStore();
+  const list = monthBooks(st.docs.lettura, month);
+  const box: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px', borderRadius: 12, background: 'color-mix(in srgb, var(--color-text) 3%, transparent)', boxShadow: 'var(--shadow-sm)', minWidth: 0 };
+  const h = (icon: string, t: string) => <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><i className={'ph ' + icon} style={{ color: 'var(--color-accent-300)', fontSize: 17 }} /><h3 style={{ fontSize: 17, fontWeight: 500, margin: 0 }}>{t}</h3></div>;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(auto-fit,minmax(280px,1fr))', gap: 12, marginTop: 8 }}>
+      <section style={box}>
+        {h('ph-calendar-dots', 'Da leggere entro ' + monthName(month))}
+        <span style={{ fontSize: 13.5, color: 'var(--color-neutral-400)' }}>Scadenza indicata a mese, senza un giorno preciso: per questo non compaiono nella griglia.</span>
+        {list.map((b) => (
+          <button key={b.id} onClick={() => onBook(b.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: 0, borderLeft: '3px solid var(--cat-lettura)', borderRadius: 8, background: 'var(--color-surface)', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}><span style={{ fontSize: 15.5, color: 'var(--color-accent-200)' }}>{b.title}</span><span style={{ fontSize: 13.5, color: 'var(--color-neutral-400)' }}>{b.author}</span></span>
+            <Tag color={BST.find((x) => x[0] === b.status)?.[2]}>{optLabel(BST, b.status)}</Tag>
+          </button>
+        ))}
+        {!list.length && <span style={{ fontSize: 14.5, color: 'var(--color-neutral-500)' }}>Nessun libro per questo mese.</span>}
+      </section>
+      {legend && <section style={box}>
+        {h('ph-palette', 'Tipi di attività')}
+        <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: '6px 12px' }}>
+          {st.lcfg.types.map((t) => <span key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14.5 }}><span style={{ width: 14, height: 14, flex: 'none', borderRadius: 4, border: '2px solid ' + t.color }} /><i className={'ph ' + t.icon} style={{ color: t.color }} />{t.label.replace(/ \(.*\)/, '')}</span>)}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 6, borderTop: '1px dashed var(--color-neutral-700)' }}><i className="ph ph-eye" style={{ color: 'var(--color-accent-300)' }} /><span style={{ fontSize: 15, fontWeight: 500 }}>Cosa mostra la griglia</span></div>
+        <span style={{ fontSize: 14, color: 'var(--color-neutral-300)', lineHeight: 1.5 }}>Sul telefono ogni giorno mostra un pallino per attività, nel colore del tipo, fino a 3: <b>pieno</b> se è completata, <b>vuoto</b> se è ancora da fare. Oltre le 3 compare il numero delle altre: tocca il giorno per l'elenco. Le scadenze di lettura con data precisa compaiono come «Leggere «titolo»».</span>
+      </section>}
     </div>
   );
 }
@@ -374,14 +479,15 @@ export function BookDetail({ ui, rec, onClose }: { ui: UI; rec: Rec; onClose: ()
   const st = useStore();
   const plan = st.docs.lettura.filter((x) => x.kind === 'attivita' && x.book === rec.id).sort(byWhen('lettura'));
   const collab = rec.collabType && rec.collabType !== 'nessuna';
-  const dup = () => {
-    const { id, createdAt, updatedAt, notifyAt, notifyQueue, notifiedAt, deletedAt, ...rest } = rec;
-    st.create('lettura', { ...rest, title: rec.title + ' (copia)', kind: 'libro' } as Rec);
-    st.say('Libro duplicato. Il piano editoriale non viene copiato.');
-  };
+  const dup = () => copyBook(st, rec);
+  const toggle = (k: 'volDone' | 'volCancelled') => { const on = !rec[k]; st.update('lettura', rec.id, { [k]: on, ...(on ? { [k === 'volDone' ? 'volCancelled' : 'volDone']: false } : {}) }); st.say(on ? (k === 'volDone' ? 'Volume completato.' : 'Volume annullato.') : 'Volume riaperto.'); };
   return (
     <Panel title={rec.title} kicker={catKicker('lettura', 'Libro')} mobile={ui.mobile} onClose={onClose}
-      actions={editDel(ui, 'libro', rec, onClose, st, <button className="btn btn-secondary" onClick={dup} style={{ minHeight: 40 }}><i className="ph ph-copy" />Duplica</button>)}>
+      actions={editDel(ui, 'libro', rec, onClose, st, <>
+        <button className="btn btn-secondary" onClick={() => toggle('volDone')} aria-pressed={!!rec.volDone} style={{ minHeight: 40 }}><i className={'ph ' + (rec.volDone ? 'ph-check-circle' : 'ph-circle')} />{rec.volDone ? 'Completato' : 'Completa'}</button>
+        <button className="btn btn-secondary" onClick={dup} style={{ minHeight: 40 }}><i className="ph ph-copy" />Copia</button>
+        <button className="btn btn-secondary" onClick={() => toggle('volCancelled')} aria-pressed={!!rec.volCancelled} style={{ minHeight: 40 }}><i className="ph ph-prohibit" />{rec.volCancelled ? 'Annullato' : 'Annulla'}</button>
+      </>)}>
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
         {rec.cover && <img src={rec.cover} alt={'Copertina di ' + rec.title} style={{ width: 110, borderRadius: 6, boxShadow: 'var(--shadow-md)' }} />}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
@@ -397,11 +503,162 @@ export function BookDetail({ ui, rec, onClose }: { ui: UI; rec: Rec; onClose: ()
         {BST.map(([v, l, c]) => <button key={v} onClick={() => st.update('lettura', rec.id, { status: v })} aria-pressed={rec.status === v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 34, padding: '3px 10px', borderRadius: 999, ...pill(rec.status === v, c), font: 'inherit', fontSize: 14, cursor: 'pointer' }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />{l}</button>)}
       </div>
       <FieldList def={kindDef('lettura', 'libro')} rec={rec} skip={['title', 'author', 'publisher', 'status', 'cover']} />
-      {collab && rec.collabName && <p style={{ margin: 0, ...muted }}>{collabWho(rec.collabType)}: {rec.collabName}</p>}
-      <SubTitle>Piano editoriale</SubTitle>
+      <SubTitle>Piano editoriale · {plan.filter((x) => isDone(st.cols, 'lettura', x.status)).length}/{plan.length} completate</SubTitle>
       {plan.map((x) => <ActCard key={x.id} c="lettura" rec={x} onClick={() => ui.openDetail('attivita', x.id)} />)}
       {!plan.length && <p style={{ margin: 0, ...muted }}>Nessuna attività: aggiungi recensione, cover reveal, segnalazioni e altri contenuti, ognuno con la sua data e il suo promemoria.</p>}
-      <button className="btn btn-secondary" onClick={() => ui.openForm('attivita', { book: rec.id, title: 'Recensione «' + rec.title + '»', isCollab: !!collab, collabName: collab ? rec.collabName : '', channels: ['blog'] })} style={{ alignSelf: 'flex-start' }}><i className="ph ph-plus" />Aggiungi al piano</button>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn btn-secondary" onClick={() => ui.openForm('libro', rec)} style={{ alignSelf: 'flex-start' }}><i className="ph ph-list-plus" />Modifica il piano</button>
+        <button className="btn btn-ghost" onClick={() => ui.openForm('attivita', { book: rec.id, title: 'Recensione «' + rec.title + '»', isCollab: !!collab, collabName: collab ? rec.collabName : '', channels: ['blog'] })} style={{ alignSelf: 'flex-start' }}><i className="ph ph-plus" />Attività con tutti i dettagli</button>
+      </div>
+    </Panel>
+  );
+}
+
+// ── LETTURA: viste alternative dei libri (copertine, elenco, delegati) ──
+function BooksAlt({ ui, books, mode }: { ui: UI; books: Rec[]; mode: 'copertine' | 'elenco' | 'delegati' }) {
+  const today = useToday();
+  const thumb = (b: Rec, w: number, h: number) => <span style={{ width: w, height: h, flex: 'none', borderRadius: 4, background: b.cover ? `url(${b.cover}) center/cover` : tint('var(--cat-lettura)', 16), display: 'grid', placeItems: 'center', color: 'var(--cat-lettura)' }}>{!b.cover && <i className="ph ph-book" />}</span>;
+  const row = (b: Rec) => {
+    const s = BST.find((x) => x[0] === b.status);
+    return (
+      <button key={b.id} onClick={() => ui.openDetail('libro', b.id)} style={{ ...surface, flexDirection: 'row', alignItems: 'center', gap: 10, padding: '8px 10px' }}>
+        {thumb(b, 30, 44)}
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}><span style={{ fontSize: 15.5, fontWeight: 500 }}>{b.title}</span><span style={{ fontSize: 13.5, color: 'var(--color-neutral-400)' }}>{b.author}</span></span>
+        <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {s && <Tag color={s[2]}>{s[1]}</Tag>}
+          {b.deadlineMode === 'data' && b.deadline && <Tag color={b.deadline < today && b.status !== 'completato' ? 'var(--color-urgent)' : undefined}>Entro {fmtS(b.deadline)}</Tag>}
+        </span>
+      </button>
+    );
+  };
+  if (mode === 'copertine')
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill,minmax(${ui.mobile ? 100 : 130}px,1fr))`, gap: 12 }}>
+        {books.map((b) => (
+          <button key={b.id} className="cover-card" onClick={() => ui.openDetail('libro', b.id)} title={b.title} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 0, border: 0, background: 'none', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+            <span style={{ aspectRatio: '2/3', width: '100%', borderRadius: 6, boxShadow: 'var(--shadow-md)', background: b.cover ? `url(${b.cover}) center/cover` : tint('var(--cat-lettura)', 16), display: 'grid', placeItems: 'center', color: 'var(--cat-lettura)' }}>{!b.cover && <i className="ph ph-book" style={{ fontSize: 28 }} />}</span>
+            <span style={{ fontSize: 13.5, lineHeight: 1.25 }}>{b.title}</span>
+          </button>
+        ))}
+      </div>
+    );
+  if (mode === 'elenco') return <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 900 }}>{books.map(row)}</div>;
+  // Delegati: libri letti da me, per delegato, e quelli di sola segnalazione
+  const groups: [string, Rec[]][] = [];
+  const mine = books.filter((b) => b.reader !== 'delegato' && b.reader !== 'nessuno');
+  if (mine.length) groups.push(['Letti da me', mine]);
+  const names = Array.from(new Set(books.filter((b) => b.reader === 'delegato').map((b) => (b.delegate || '').trim() || 'Delegato senza nome')));
+  names.forEach((n) => groups.push(['Delegato: ' + n, books.filter((b) => b.reader === 'delegato' && ((b.delegate || '').trim() || 'Delegato senza nome') === n)]));
+  const only = books.filter((b) => b.reader === 'nessuno');
+  if (only.length) groups.push(['Solo segnalazione', only]);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
+      {groups.map(([t, list]) => (
+        <section key={t} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}><h3 style={{ fontSize: 17, fontWeight: 500, margin: 0 }}>{t}</h3><span style={muted}>{list.length}</span></div>
+          {list.map(row)}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+// ── SCRITTURA: pagina iniziale con i progetti e le scadenze ─────────────
+export function WritingHome({ ui }: { ui: UI }) {
+  const st = useStore();
+  const today = useToday(), week = K(add(P(today), 7));
+  const [open, setOpen] = useState(!ui.mobile);
+  const projects = st.docs.scrittura.filter((x) => x.kind === 'progetto').sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  const acts = actsOf(st, 'scrittura').filter((x) => !isDone(st.cols, 'scrittura', x.status) && x.date).sort(byWhen('scrittura'));
+  const late = acts.filter((x) => x.date! < today), soon = acts.filter((x) => x.date! >= today && x.date! <= week);
+  const stat = (p: Rec) => W_PSTAT.find((s) => s[0] === p.status);
+  const list = (title: string, items: Rec[], color?: string) => (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><h3 style={{ fontSize: 16, fontWeight: 500, margin: 0, color }}>{title}</h3><span style={muted}>{items.length}</span></div>
+      {items.map((x) => <ActCard key={x.id} c="scrittura" rec={x} onClick={() => ui.openDetail('attivita', x.id)} />)}
+      {!items.length && <span style={{ fontSize: 14.5, color: 'var(--color-neutral-500)' }}>Niente da segnalare.</span>}
+    </section>
+  );
+  const panel = (
+    <aside aria-label="Scadenze" style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '14px 16px', borderRadius: 12, background: 'color-mix(in srgb, var(--color-text) 3%, transparent)', boxShadow: 'var(--shadow-sm)', alignSelf: 'flex-start', width: ui.mobile ? '100%' : 320, flex: 'none' }}>
+      {ui.mobile ? (
+        <button onClick={() => setOpen(!open)} aria-expanded={open} style={{ display: 'flex', alignItems: 'center', gap: 8, border: 0, background: 'none', padding: 0, color: 'var(--color-text)', font: 'inherit', fontSize: 16, cursor: 'pointer' }}>
+          <i className="ph ph-hourglass" style={{ color: 'var(--color-accent-300)' }} /><span style={{ flex: 1, textAlign: 'left' }}>Scadenze</span>
+          <span style={{ ...muted, color: late.length ? 'var(--color-urgent)' : undefined }}>{late.length} scadute · {soon.length} in arrivo</span><i className={'ph ' + (open ? 'ph-caret-up' : 'ph-caret-down')} />
+        </button>
+      ) : <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><i className="ph ph-hourglass" style={{ color: 'var(--color-accent-300)', fontSize: 17 }} /><h3 style={{ fontSize: 17, fontWeight: 500, margin: 0 }}>Scadenze</h3></div>}
+      {(open || !ui.mobile) && <>{list('Scadute', late, late.length ? 'var(--color-urgent)' : undefined)}{list('Prossimi 7 giorni', soon)}</>}
+    </aside>
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: ui.mobile ? 'column' : 'row', gap: 18, alignItems: ui.mobile ? 'stretch' : 'flex-start' }}>
+      {ui.mobile && panel}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {!ui.mobile && <AddBtn label="Nuovo progetto" onClick={() => ui.openForm('progetto')} />}
+        {projects.length ? (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill,minmax(${ui.mobile ? 128 : 160}px,1fr))`, gap: 14 }}>
+            {projects.map((p) => {
+              const n = acts.filter((x) => x.project === p.id).length, s = stat(p);
+              return (
+                <button key={p.id} className="cover-card" onClick={() => ui.openDetail('progetto', p.id)} style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: 0, border: 0, background: 'none', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0 }}>
+                  <span style={{ aspectRatio: '2/3', width: '100%', borderRadius: 6, boxShadow: 'var(--shadow-md)', background: p.cover ? `url(${p.cover}) center/cover` : `linear-gradient(160deg, ${tint('var(--cat-scrittura)', 22)}, ${tint('var(--cat-scrittura)', 6)})`, display: 'grid', placeItems: 'center', color: 'var(--cat-scrittura)' }}>{!p.cover && <Rosette size={64} />}</span>
+                  <span style={{ fontSize: 16, fontWeight: 500, lineHeight: 1.25 }}>{p.title}</span>
+                  <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{s && <Tag color={s[2]}>{s[1]}</Tag>}{n > 0 && <Tag>{n} in scadenza</Tag>}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : <Empty icon="ph-feather" title="Nessun progetto" text="Aggiungi storie, raccolte e oneshot: ognuno avrà la sua copertina." />}
+      </div>
+      {!ui.mobile && panel}
+    </div>
+  );
+}
+
+// ── SCRITTURA: ispirazione (foto e link) ────────────────────────────────
+export function InspirationView({ ui }: { ui: UI }) {
+  const st = useStore();
+  const [q, setQ] = useState('');
+  const [tag, setTag] = useState('');
+  const all = st.docs.scrittura.filter((x) => x.kind === 'ispirazione');
+  const tags = Array.from(new Set(all.map((x) => (x.tag || '').trim()).filter(Boolean))).sort();
+  const items = all.filter((x) => !tag || x.tag === tag).filter((x) => !q.trim() || [x.title, x.notes, x.tag, x.linkLabel, x.link].join(' ').toLowerCase().includes(q.trim().toLowerCase())).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {!ui.mobile && <AddBtn label="Aggiungi ispirazione" onClick={() => ui.openForm('ispirazione')} />}
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca nelle ispirazioni" aria-label="Cerca nelle ispirazioni" style={{ flex: ui.mobile ? '1 1 100%' : '0 1 300px', minHeight: ui.mobile ? 44 : 36 }} />
+        {tags.length > 0 && [['', 'Tutte'], ...tags.map((t) => [t, t])].map(([v, l]) => <button key={v} onClick={() => setTag(v)} aria-pressed={tag === v} style={{ minHeight: ui.mobile ? 40 : 32, padding: '4px 12px', borderRadius: 999, ...pill(tag === v), font: 'inherit', fontSize: 14, cursor: 'pointer' }}>{l}</button>)}
+      </div>
+      {items.length ? (
+        <div style={{ columnWidth: ui.mobile ? 150 : 230, columnGap: 12 }}>
+          {items.map((x) => (
+            <button key={x.id} className="cover-card" onClick={() => ui.openDetail('ispirazione', x.id)} style={{ ...surface, breakInside: 'avoid', width: '100%', marginBottom: 12, padding: 0, overflow: 'hidden' }}>
+              {x.image && <img src={x.image} alt="" loading="lazy" style={{ width: '100%', display: 'block' }} />}
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '10px 12px 12px' }}>
+                <span style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.25 }}>{x.title}</span>
+                {x.tag && <span><Tag>{x.tag}</Tag></span>}
+                {x.link && <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13.5, color: 'var(--color-accent-300)' }}><i className="ph ph-link" />{x.linkLabel || host(x.link)}</span>}
+                {x.notes && <span style={{ fontSize: 14, color: 'var(--color-neutral-300)', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as any}>{x.notes}</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : <Empty icon="ph-images" title="Nessuna ispirazione" text="Salva foto, moodboard e link a fonti esterne (Pinterest, articoli, documenti su Google Drive) per le tue storie." action={ui.mobile ? undefined : undefined} />}
+    </div>
+  );
+}
+
+export function InspirationDetail({ ui, rec, onClose }: { ui: UI; rec: Rec; onClose: () => void }) {
+  const st = useStore();
+  const project = rec.project ? st.docs.scrittura.find((x) => x.id === rec.project) : null;
+  return (
+    <Panel title={rec.title} kicker={catKicker('scrittura', 'Ispirazione')} mobile={ui.mobile} onClose={onClose} actions={editDel(ui, 'ispirazione', rec, onClose, st)}>
+      {rec.image && <a href={rec.image} target="_blank" rel="noopener noreferrer"><img src={rec.image} alt={rec.title} style={{ width: '100%', borderRadius: 8, boxShadow: 'var(--shadow-md)' }} /></a>}
+      {rec.tag && <div><Tag>{rec.tag}</Tag></div>}
+      {rec.link && <a className="btn btn-secondary" href={href(rec.link)} target="_blank" rel="noopener noreferrer" style={{ alignSelf: 'flex-start', textDecoration: 'none' }}><i className="ph ph-arrow-square-out" />{rec.linkLabel || host(rec.link)}</a>}
+      {rec.notes && <p style={{ margin: 0, fontSize: 15.5, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{rec.notes}</p>}
+      {project && <button className="btn btn-secondary" onClick={() => ui.openDetail('progetto', project.id)} style={{ alignSelf: 'flex-start' }}><i className="ph ph-folder" />Apri il progetto «{project.title}»</button>}
     </Panel>
   );
 }

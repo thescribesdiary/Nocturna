@@ -39,9 +39,9 @@ for (const [sec, label] of Object.entries(SECTIONS)) {
     const due = q.filter(([t]) => t <= now + WINDOW), rest = q.filter(([t]) => t > now + WINDOW);
     const fresh = due.filter(([t]) => t >= now - STALE);
     if (uid && fresh.length && !x.deletedAt) {
-      const date = dateOf(sec, x);
+      const date = x.kind === 'libro' ? x.deadline : dateOf(sec, x);
       const latest = fresh[fresh.length - 1][1];
-      const body = latest === 'ora' ? `Alle ${x.time} · ${label}` : `Scadenza ${fmt(date)}${x.time ? ' alle ' + x.time : ''} · ${label}`;
+      const body = latest === 'libro' ? `Scadenza di lettura ${fmt(date)} · ${label}` : latest === 'ora' ? `Alle ${x.time} · ${label}` : `Scadenza ${fmt(date)}${x.time ? ' alle ' + x.time : ''} · ${label}`;
       const tokens = await tokensOf(uid);
       if (tokens.length) {
         const res = await fcm.sendEachForMulticast({

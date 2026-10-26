@@ -108,9 +108,12 @@ export function MobileBar({ route, go }: { route: Route; go: (r: Route) => void 
 }
 
 export function Toast() {
-  const { toast } = useStore();
+  const { toast, toastUndo, say } = useStore();
   if (!toast) return null;
   return (
-    <div role="status" style={{ position: 'fixed', left: '50%', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)', transform: 'translateX(-50%)', zIndex: 100, maxWidth: 'min(520px,90vw)', padding: '10px 16px', borderRadius: 10, background: 'var(--color-surface)', boxShadow: 'var(--shadow-md)', fontSize: 15, color: 'var(--color-neutral-200)' }}>{toast}</div>
+    <div role="status" style={{ position: 'fixed', left: '50%', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 96px)', transform: 'translateX(-50%)', zIndex: 100, maxWidth: 'min(520px,90vw)', display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', borderRadius: 10, background: 'var(--color-surface)', boxShadow: 'var(--shadow-md)', fontSize: 15, color: 'var(--color-neutral-200)' }}>
+      <span>{toast}</span>
+      {toastUndo && <button onClick={() => { toastUndo(); }} style={{ border: 0, background: 'none', padding: '6px 4px', color: 'var(--color-accent-300)', font: 'inherit', fontWeight: 600, cursor: 'pointer' }}>Annulla</button>}
+    </div>
   );
 }

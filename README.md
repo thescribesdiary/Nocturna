@@ -6,6 +6,21 @@ La tua app personale per scuola, lavoro, lettura e scrittura. Funziona su comput
 
 ---
 
+## Novità della versione 2
+
+- **Scrittura:** la pagina iniziale (*Panoramica*) mostra i progetti con le loro copertine e, di lato, le attività scadute e quelle dei prossimi 7 giorni (su telefono il pannello sta in alto, comprimibile). Ogni progetto ha il campo copertina. Nell'elenco *Progetti* c'è un solo pulsante «Nuovo progetto».
+- **Ispirazione (Scrittura):** nuova scheda per salvare foto (compresse a circa 1200 px, nel database, senza costi) e link a fonti esterne con titolo, etichetta e nota. PDF e documenti pesanti: caricali su Google Drive e incolla il link.
+- **The Scribe's Diary:** viste dei libri *Schede, Copertine, Elenco, Delegati* (per delegato e «sola segnalazione»); le scadenze di lettura arrivano come notifica (3 giorni prima e il giorno stesso, alle 9:00) e compaiono nel riepilogo all'apertura.
+- **Ovunque:** ricerca unica dalla Home (pulsante «Cerca ovunque» o Ctrl/Cmd + K); «Annulla» dopo ogni eliminazione; avviso se elimini un progetto, un libro o una materia con elementi collegati; date rapide (Oggi, Domani, +1 settimana); duplicazione delle attività; trascinamento delle attività su un altro giorno nel calendario (computer); ultima scheda e filtri di ogni sezione ricordati.
+- **Ricorrenze:** «fino al», «nei giorni» (es. lunedì e giovedì) e «Salta questa volta» nel dettaglio.
+- **Scuola:** media dei voti nella scheda della materia.
+- **Impostazioni (spente di base):** lezioni dell'orario nel calendario della Home; svuotamento automatico del cestino dopo 30 giorni. Il riepilogo all'apertura ricorda il backup se l'ultimo ha più di 30 giorni.
+- **Ornamenti goth:** fregi con croce e ali di pipistrello sotto i titoli, angoli e archi traforati nei moduli, nel riepilogo e nell'accesso, rosone a sole nero negli stati vuoti; cremisi di notte, rosso sangue sul tema chiaro. Corretti anche i campi data/ora e i menu a tendina nel tema chiaro e l'avviso che copriva il pulsante + sul telefono.
+
+Per aggiornare un'installazione già pubblicata basta sostituire i file nel repository GitHub: le regole di sicurezza e i secret non cambiano.
+
+---
+
 ## Configurazione (una volta sola, circa 30 minuti)
 
 Ti servono un browser e l'account Google che userai per Nocturna. Va bene anche solo il telefono.
@@ -77,7 +92,7 @@ Segui i passi nell'ordine.
 | --- | --- |
 | `FIREBASE_CONFIG` | Il blocco `firebaseConfig` del passo 2. Va bene anche incollarlo tutto, da `const firebaseConfig = {` fino a `};`. |
 | `FIREBASE_SERVICE_ACCOUNT` | Tutto il contenuto del file `.json` del passo 5. Vedi sotto come copiarlo. |
-| `ALLOWED_EMAIL` | L'indirizzo Google che userai per entrare in Nocturna. Nessun altro account potrà accedere. |
+| `ALLOWED_EMAIL` | L'indirizzo Google che userai per entrare in Nocturna. Puoi metterne anche due (o più) separati da una virgola, per esempio `primo@gmail.com, secondo@gmail.com`: tutti gli account vedono e modificano gli stessi dati. Nessun altro account potrà accedere. |
 
 **Come copiare il contenuto del file `.json`**
 
@@ -180,7 +195,7 @@ Se una fase modifica anche il file `deploy.yml`, te lo dirò e andrà aggiornato
 - **Errore che dice che un'API non è attiva** (*API has not been used* o *is disabled*). Apri il link contenuto nell'errore, clicca **Abilita**, aspetta un paio di minuti e poi **Re-run jobs**.
 - **Errore su `FIREBASE_CONFIG`.** Ricopia il blocco `firebaseConfig` per intero nel secret.
 - **Le notifiche non arrivano.** Controlla in **Actions → Promemoria Nocturna** che le esecuzioni siano verdi e che il dispositivo risulti attivo in Impostazioni. Se l'errore parla di *Cloud Messaging* o *FCM*, apri il link contenuto nell'errore e abilita l'API.
-- **«Account non autorizzato» all'accesso.** Hai scelto un account Google diverso da quello scritto nel secret `ALLOWED_EMAIL`.
+- **«Account non autorizzato» all'accesso.** Hai scelto un account Google che non è scritto nel secret `ALLOWED_EMAIL`. Per aggiungerne uno: GitHub → Settings → Secrets and variables → Actions → `ALLOWED_EMAIL` → Update, scrivi gli indirizzi separati da virgola e poi rilancia la pubblicazione da Actions.
 
 ---
 
@@ -195,7 +210,7 @@ Tutti i dati stanno in un unico database Firestore, in `users/{tuo-id}/{sezione}
 - `impostazioni`: preferenze, profilo e colonne delle bacheche.
 - `dispositivi`: i telefoni e i computer abilitati alle notifiche.
 
-Le regole di sicurezza permettono di leggere e scrivere solo i propri dati, e solo all'account indicato in `ALLOWED_EMAIL`. Gli elementi eliminati restano nel Cestino finché non li elimini definitivamente.
+Le regole di sicurezza permettono di leggere e scrivere i dati solo agli account indicati in `ALLOWED_EMAIL`. I dati stanno in uno spazio condiviso (`users/condiviso`): dalla versione 2.1, al primo accesso di ogni account i dati che aveva nelle versioni precedenti vengono copiati lì una volta sola, senza cancellare l'originale. Gli elementi eliminati restano nel Cestino finché non li elimini definitivamente.
 
 ## Per chi sviluppa
 

@@ -28,7 +28,17 @@ a{color:var(--color-accent-300)}a:hover{color:var(--color-accent-200)}
 html,body,#root{height:100%}
 body{-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
 .gothic{font-family:'Pirata One',serif;font-weight:400;letter-spacing:0}
-[data-theme="chiaro"] input[type=date],[data-theme="chiaro"] input[type=time]{color-scheme:light!important}
+[data-theme]{color-scheme:dark}
+[data-theme="chiaro"]{color-scheme:light}
+[data-theme="chiaro"] input,[data-theme="chiaro"] select,[data-theme="chiaro"] textarea{color-scheme:light!important}
+/* Ornamenti goth: cremisi con alone sul tema scuro, rosso sangue quasi nero sul chiaro */
+[data-theme]{--orn:#c2314b;--orn-glow:drop-shadow(0 0 3px color-mix(in srgb,#c2314b 55%,transparent))}
+[data-theme="contrasto"]{--orn:#e0475f}
+[data-theme="chiaro"]{--orn:#5c0f1c;--orn-glow:none}
+.dialog{position:relative}
+.orn{color:var(--orn);filter:var(--orn-glow);pointer-events:none;flex:none}
+@media (hover:hover){.cover-card:hover{transform:translateY(-2px)}}
+.cover-card{transition:transform .15s}
 :focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 button{-webkit-tap-highlight-color:transparent}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

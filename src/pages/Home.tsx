@@ -1,10 +1,15 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GG, MESI, P, dayLong } from '../lib/dates';
 import { CATS, HomeTask, ORDER, Section, catVar } from '../data/sections';
 import { useStore } from '../data/store';
-import { tomorrowOf, useHomeTasks, useTaskEditor, useToday } from '../data/hooks';
+import { lessonTasks, tomorrowOf, useHomeTasks, useToday } from '../data/hooks';
+import { useTaskActions } from '../data/actions';
+import { useRecordEditor } from '../components/CalendarForm';
+import { bookDeadlines, monthBooks } from '../data/books';
+import { LetturaCalendarExtras } from './views';
 import { CalToolbar, CalView, DeskCalendar, MobileCalendar, decorate, sortT } from '../components/Calendar';
 import { Check, Dot, H1, Seg, hScroll, pill, tint } from '../components/ui';
+import { GlobalSearch } from '../components/GlobalSearch';
 
 const shortDay = (k: string) => { const d = P(k); return GG[d.getDay()].toLowerCase() + ' ' + d.getDate() + ' ' + MESI[d.getMonth()].slice(0, 3); };
 
@@ -59,10 +64,18 @@ function DayItem({ t, today, onToggle, onOpen, mobile }: { t: HomeTask; today: s
 }
 
 export function Home({ mobile }: { mobile: boolean }) {
-  const { cols } = useStore();
+  const { cols, docs, prefs } = useStore();
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setSearching(true); } };
+    window.addEventListener('keydown', f);
+    return () => window.removeEventListener('keydown', f);
+  }, []);
   const today = useToday(), tomorrow = tomorrowOf(today);
   const all = useHomeTasks();
-  const ed = useTaskEditor(mobile);
+  const rec = useRecordEditor(mobile);
+  const act = useTaskActions();
+  const ed = { ...act, openEdit: rec.openEdit, dialog: rec.dialog, openNew: (p: { date: string }) => rec.openNew({ ...p, cat: filters.length === 1 ? filters[0] : undefined }) };
   const [filters, setFilters] = useState<Section[]>([]);
   const [view, setView] = useState<CalView>('mese');
   const [anchor, setAnchor] = useState(today);
@@ -74,7 +87,17 @@ export function Home({ mobile }: { mobile: boolean }) {
   const sw = useRef<{ x: number; y: number } | null>(null);
 
   const on = (c: Section) => filters.length === 0 || filters.includes(c);
-  const visible = all.filter((t) => on(t.cat));
+  // Opzione (Impostazioni): le lezioni dell'orario compaiono anche nel calendario della Home.
+  const lessons = prefs.lessonsOnHome && on('scuola') ? lessonTasks(docs.scuola, mobile ? mSel : anchor) : [];
+  // Le scadenze di lettura dei libri (data precisa) compaiono nella griglia insieme alle attività.
+  const visible = [...all.filter((t) => on(t.cat)), ...lessons, ...(on('lettura') ? bookDeadlines(docs.lettura) : [])];
+  const month = (mobile ? mSel : anchor).slice(0, 7);
+  const extras = on('lettura') && monthBooks(docs.lettura, month).length > 0
+    ? <LetturaCalendarExtras month={month} mobile={mobile} legend={false} onBook={(id) => rec.openEdit({ id: 'libro:' + id, src: id, cat: 'lettura' } as HomeTask)} />
+    : null;
+  const openTask = (t: HomeTask) => {
+    if (t.id.startsWith('lez:')) { try { localStorage.setItem('nocturna-ui-scuola', JSON.stringify({ tab: 'orario' })); } catch {} window.location.hash = '#/scuola'; } else ed.openEdit(t);
+  };
   const todayT = all.filter((t) => t.date === today).sort(sortT);
   const tomT = all.filter((t) => t.date === tomorrow).sort(sortT);
   const doneN = todayT.filter((t) => t.done).length;
@@ -88,7 +111,7 @@ export function Home({ mobile }: { mobile: boolean }) {
         onPointerUp={(e) => { const s = sw.current; sw.current = null; if (!s) return; const dx = e.clientX - s.x, dy = e.clientY - s.y; if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) setMTab(dx < 0 ? 'today' : 'cal'); }}
         style={{ touchAction: 'pan-y', minHeight: '100%' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 0 14px' }}>
-          <H1 size={36}>Calendario</H1>
+          <div style={{ display: 'flex', alignItems: 'center' }}><div style={{ flex: 1 }}><H1 size={36}>Calendario</H1></div><button onClick={() => setSearching(true)} aria-label="Cerca in tutte le aree" className="btn btn-secondary btn-icon" style={{ width: 44, height: 44 }}><i className="ph ph-magnifying-glass" style={{ fontSize: 20 }} /></button></div>
           <div style={{ fontSize: 15, color: 'var(--color-neutral-400)' }}>{dayLong(P(today))} {P(today).getFullYear()} · {todayT.length} attività oggi, {doneN} completate</div>
         </div>
         <div style={{ marginBottom: 14 }}><Seg big grid label="Sezione" value={mTab} onChange={setMTab} opts={[['cal', 'Calendario'], ['today', 'To-Do']]} /></div>
@@ -97,7 +120,12 @@ export function Home({ mobile }: { mobile: boolean }) {
             <div ref={hScroll} data-hscroll="1" role="group" aria-label="Filtra per area" style={{ display: 'flex', gap: 8, overflowX: 'auto', overscrollBehaviorX: 'contain', margin: '0 -18px', padding: '0 18px 12px' }}>
               <FilterChips filters={filters} setFilters={setFilters} mobile />
             </div>
-            <MobileCalendar tasks={visible} view={mView} setView={setMView} sel={mSel} setSel={setMSel} today={today} cols={cols} onTask={ed.openEdit} />
+            <MobileCalendar tasks={visible} view={mView} setView={setMView} sel={mSel} setSel={setMSel} today={today} cols={cols} onTask={openTask} />
+            <p style={{ margin: '14px 0 0', fontSize: 13.5, color: 'var(--color-neutral-500)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-neutral-300)' }} />completata
+              <span style={{ width: 8, height: 8, boxSizing: 'border-box', borderRadius: '50%', border: '1.5px solid var(--color-neutral-300)', marginLeft: 8 }} />da fare · il colore è quello dell'area
+            </p>
+            {extras}
           </>
         ) : (
           <>
@@ -116,6 +144,7 @@ export function Home({ mobile }: { mobile: boolean }) {
         )}
         <button onClick={() => ed.openNew({ date: mTab === 'cal' ? mSel : today })} aria-label="Aggiungi attività" style={fab}><i className="ph-bold ph-plus" style={{ fontSize: 24 }} /></button>
         {ed.dialog}
+        {searching && <GlobalSearch mobile onClose={() => setSearching(false)} />}
       </div>
     );
   }
@@ -137,6 +166,7 @@ export function Home({ mobile }: { mobile: boolean }) {
             <div style={{ fontSize: 14.5, color: 'var(--color-neutral-400)' }}>{todayLabel} · scadenze di tutte le aree</div>
           </div>
           <div style={{ flex: 1 }} />
+          <button className="btn btn-secondary" onClick={() => setSearching(true)} style={{ flex: 'none', whiteSpace: 'nowrap', minHeight: 38, paddingInline: 14 }}><i className="ph ph-magnifying-glass" style={{ fontSize: 15 }} />Cerca ovunque</button>
           <button className="btn btn-primary" onClick={() => ed.openNew({ date: view === 'giorno' ? anchor : today })} style={{ flex: 'none', whiteSpace: 'nowrap', minHeight: 38, paddingInline: 14 }}><i className="ph-bold ph-plus" style={{ fontSize: 14 }} />Aggiungi attività</button>
         </div>
         <CalToolbar view={view} anchor={anchor} today={today} setAnchor={setAnchor} setView={(v) => { if (v === 'giorno' && sel) setAnchor(sel); setView(v); }} />
@@ -146,7 +176,8 @@ export function Home({ mobile }: { mobile: boolean }) {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: 'var(--color-neutral-400)' }}><i className="ph-fill ph-warning" style={{ color: 'var(--color-urgent)', fontSize: 13 }} />Urgente o scaduta</span>
         </div>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          <DeskCalendar tasks={visible} view={view} anchor={anchor} sel={sel} today={today} cols={cols} onDay={(k) => { setSel(k); setPanelOpen(true); }} onTask={ed.openEdit} />
+          <DeskCalendar tasks={visible} view={view} anchor={anchor} sel={sel} today={today} cols={cols} onDay={(k) => { setSel(k); setPanelOpen(true); }} onTask={openTask} onMove={ed.move} />
+          {extras}
         </div>
       </main>
       {panelOpen ? (
@@ -184,6 +215,7 @@ export function Home({ mobile }: { mobile: boolean }) {
         </aside>
       )}
       {ed.dialog}
+      {searching && <GlobalSearch mobile={false} onClose={() => setSearching(false)} />}
     </>
   );
 }
