@@ -6,12 +6,14 @@ import { useTaskActions } from '../data/actions';
 import { Field, KindDef, Opt, getP, refOf, typeOf, lTypeColor } from '../data/schema';
 import { pill } from './ui';
 import { Corners } from './Ornaments';
+import { useDialog } from './useDialog';
 
 /** Pannello laterale (desktop) o a schermo intero (telefono) con il dettaglio di un elemento. */
 export function Panel({ title, kicker, onClose, mobile, children, actions }: { title: string; kicker?: React.ReactNode; onClose: () => void; mobile: boolean; children: React.ReactNode; actions?: React.ReactNode }) {
+  const dlg = useDialog<HTMLElement>(onClose);
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 45, display: 'flex', justifyContent: 'flex-end', background: 'color-mix(in srgb, var(--color-sidebar) 55%, transparent)' }} onClick={(e) => e.target === e.currentTarget && onClose()} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
-      <aside role="dialog" aria-modal="true" aria-label={title} style={{ width: mobile ? '100%' : 'min(480px,100%)', height: '100%', overflowY: 'auto', background: 'var(--color-bg)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 16, position: 'relative', padding: mobile ? 'calc(env(safe-area-inset-top, 0px) + 12px) 18px calc(env(safe-area-inset-bottom, 0px) + 28px)' : '22px 24px 28px' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 45, display: 'flex', justifyContent: 'flex-end', background: 'color-mix(in srgb, var(--color-sidebar) 55%, transparent)' }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <aside ref={dlg} role="dialog" aria-modal="true" aria-label={title} style={{ width: mobile ? '100%' : 'min(480px,100%)', height: '100%', overflowY: 'auto', background: 'var(--color-bg)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 16, position: 'relative', padding: mobile ? 'calc(env(safe-area-inset-top, 0px) + 12px) 18px calc(env(safe-area-inset-bottom, 0px) + 28px)' : '22px 24px 28px' }}>
         {!mobile && <Corners size={34} inset={4} />}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 }}>
@@ -126,7 +128,7 @@ export function ActCard({ c, rec, onClick, draggable, onDragStart, onDragEnd, bi
       <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: big ? 14 : 13.5, color: 'var(--color-neutral-400)' }}><i className="ph ph-calendar-blank" style={{ fontSize: 13 }} />{i.dateLabel}</span>
       {(i.flag || i.badges.length > 0) && (
         <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-          {i.flag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px', borderRadius: 999, background: urgentFlag ? 'color-mix(in srgb, var(--color-urgent) 16%, transparent)' : 'color-mix(in srgb, var(--color-accent) 14%, transparent)', fontSize: 13, color: urgentFlag ? 'var(--color-urgent)' : 'var(--color-accent-300)' }}>{urgentFlag && <i className="ph-fill ph-warning" />}{i.flag}</span>}
+          {i.flag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px', borderRadius: 999, background: urgentFlag ? 'color-mix(in srgb, var(--color-urgent) 16%, transparent)' : 'color-mix(in srgb, var(--color-accent) 14%, transparent)', fontSize: 13, color: urgentFlag ? 'var(--color-urgent-text)' : 'var(--color-accent-300)' }}>{urgentFlag && <i className="ph-fill ph-warning" />}{i.flag}</span>}
           {i.badges.map((b) => <span key={b} style={{ padding: '1px 8px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-text) 8%, transparent)', fontSize: 13, color: 'var(--color-neutral-300)' }}>{b}</span>)}
         </span>
       )}

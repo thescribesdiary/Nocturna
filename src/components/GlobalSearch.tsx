@@ -2,11 +2,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CATS, KIND_LABEL, ORDER, Section, catVar, recTitle } from '../data/sections';
 import { useStore } from '../data/store';
+import { useDialog } from './useDialog';
 import { Corners } from './Ornaments';
 
 const FIELDS = ['title', 'name', 'notes', 'desc', 'topics', 'author', 'publisher', 'genre', 'content', 'link', 'linkLabel', 'tag', 'collabName', 'participants', 'decisions', 'projectType'];
 
 export function GlobalSearch({ onClose, mobile }: { onClose: () => void; mobile: boolean }) {
+  const dlg = useDialog(onClose);
   const { docs } = useStore();
   const [q, setQ] = useState('');
   const ref = useRef<HTMLInputElement>(null);
@@ -27,8 +29,8 @@ export function GlobalSearch({ onClose, mobile }: { onClose: () => void; mobile:
     window.location.hash = '#/' + h.c;
   };
   return (
-    <div onClick={(e) => e.target === e.currentTarget && onClose()} onKeyDown={(e) => e.key === 'Escape' && onClose()} style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', justifyContent: 'center', alignItems: mobile ? 'stretch' : 'flex-start', padding: mobile ? 0 : '12vh 20px 20px', background: 'color-mix(in srgb, var(--color-sidebar) 72%, transparent)' }}>
-      <div role="dialog" aria-modal="true" aria-label="Cerca ovunque" className="dialog" style={{ width: mobile ? '100%' : 'min(600px,100%)', maxHeight: mobile ? '100%' : '70vh', borderRadius: mobile ? 0 : undefined, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
+    <div onClick={(e) => e.target === e.currentTarget && onClose()} style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', justifyContent: 'center', alignItems: mobile ? 'stretch' : 'flex-start', padding: mobile ? 0 : '12vh 20px 20px', background: 'color-mix(in srgb, var(--color-sidebar) 72%, transparent)' }}>
+      <div ref={dlg} role="dialog" aria-modal="true" aria-label="Cerca ovunque" className="dialog" style={{ width: mobile ? '100%' : 'min(600px,100%)', maxHeight: mobile ? '100%' : '70vh', borderRadius: mobile ? 0 : undefined, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
         {!mobile && <Corners size={30} inset={4} />}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ position: 'relative', flex: 1 }}>

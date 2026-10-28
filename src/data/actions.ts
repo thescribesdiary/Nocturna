@@ -1,9 +1,10 @@
 // Operazioni sulle attività usate da Home e bacheche. Ogni modifica finisce nel documento d'origine.
-import { K, P, add, addMonth, dayLong } from '../lib/dates';
+import { K, P, add, dayLong } from '../lib/dates';
 import {
   ACT_KIND, HomeTask, NEW_ACT, Rec, Section, dateFieldPatch, dateOf, finalStatus, isDone, reopenStatus, urgentPatch,
 } from './sections';
 import { useStore } from './store';
+import { monthlyAnchor, nextMonthly, nextOccurrenceId, seriesOf } from '../lib/recurrence';
 
 export type TaskForm = {
   mode: 'new' | 'edit';
@@ -21,7 +22,7 @@ export type TaskForm = {
 
 export function useTaskActions() {
   const st = useStore();
-  const { docs, cols, create, update, say } = st;
+  const { docs, cols, create, update, spawnOnce, say } = st;
   const find = (c: Section, id: string) => docs[c].find((x) => x.id === id);
 
   /** Quando un'attività ricorrente viene completata, crea la successiva. */
@@ -30,7 +31,9 @@ export function useTaskActions() {
     const date = dateOf(c, x);
     if (!date) return;
     const d = P(date);
-    let nd = x.repeat === 'giorno' ? add(d, 1) : x.repeat === 'settimana' ? add(d, 7) : addMonth(d, 1);
+    const monthly = x.repeat !== 'giorno' && x.repeat !== 'settimana';
+    const anchor = monthly ? monthlyAnchor(date, x.repeatDay) : 0;
+    let nd = x.repeat === 'giorno' ? add(d, 1) : x.repeat === 'settimana' ? add(d, 7) : P(nextMonthly(date, anchor));
     // «Nei giorni»: la prossima è il primo giorno scelto dopo la data attuale (es. lunedì e giovedì).
     const days: string[] = Array.isArray(x.repeatDays) ? x.repeatDays : [];
     if (x.repeat === 'settimana' && days.length) {
@@ -44,8 +47,9 @@ export function useTaskActions() {
     }
     const prev = x.prevStatus && !isDone(cols, c, x.prevStatus) ? x.prevStatus : reopenStatus(cols, c);
     const { id, createdAt, updatedAt, deletedAt, notifyAt, notifyQueue, notifyKinds, notifiedAt, spawnedNext, prevStatus, grade, ...rest } = x as any;
-    create(c, { ...rest, ...dateFieldPatch(c, x, K(nd)), status: prev, kind: x.kind } as Rec);
-    update(c, x.id, { spawnedNext: true });
+    // ID prevedibile (serie + data) e creazione in una transazione: se due dispositivi completano insieme
+    // la stessa attività, solo uno crea l'occorrenza successiva e nessuno sovrascrive l'altro.
+    spawnOnce(c, x.id, { ...rest, ...dateFieldPatch(c, x, K(nd)), status: prev, kind: x.kind, seriesId: seriesOf(x), ...(monthly ? { repeatDay: anchor } : {}), id: nextOccurrenceId(x, K(nd)) } as Rec & { id: string });
     say('Attività ricorrente: la prossima è ' + dayLong(nd).toLowerCase() + '.');
   };
 

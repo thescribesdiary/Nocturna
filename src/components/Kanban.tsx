@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { Column, Rec, Section, colsOf, dateOf, toneColor, visibleCols } from '../data/sections';
 import { useStore } from '../data/store';
 import { useTaskActions } from '../data/actions';
 import { ActCard } from './Detail';
+import { useDialog } from './useDialog';
 import { hScroll, pill } from './ui';
 
 const byDate = (c: Section) => (a: Rec, b: Rec) => (dateOf(c, a) || '9999').localeCompare(dateOf(c, b) || '9999') || (a.time || '99').localeCompare(b.time || '99');
@@ -14,24 +15,35 @@ export function Kanban({ c, items, mobile, onOpen, onNew }: { c: Section; items:
   const [drag, setDrag] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [mCol, setMCol] = useState<string>(columns[1]?.id || columns[0].id);
+  const uid = useId();
+  const tabId = (id: string) => `${uid}-col-${id}`, panelId = `${uid}-pannello`;
 
   if (mobile) {
     const cur = columns.find((x) => x.id === mCol) || columns[0];
     const cards = items.filter((t) => t.status === cur.id).sort(byDate(c));
     return (
       <>
-        <div ref={hScroll} data-hscroll="1" role="tablist" aria-label="Colonne" style={{ display: 'flex', gap: 8, overflowX: 'auto', overscrollBehaviorX: 'contain', margin: '0 -18px', padding: '0 18px 14px' }}>
+        <div ref={hScroll} data-hscroll="1" role="tablist" aria-label="Colonne" onKeyDown={(e) => {
+          // Frecce sinistra/destra, Inizio e Fine spostano la colonna selezionata (schema «tab» standard).
+          const i = columns.findIndex((x) => x.id === cur.id);
+          const j = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? columns.length - 1 : -2;
+          if (j === -2) return;
+          e.preventDefault();
+          const n = columns[(j + columns.length) % columns.length];
+          setMCol(n.id);
+          requestAnimationFrame(() => document.getElementById(tabId(n.id))?.focus());
+        }} style={{ display: 'flex', gap: 8, overflowX: 'auto', overscrollBehaviorX: 'contain', margin: '0 -18px', padding: '0 18px 14px' }}>
           {columns.map((col) => {
             const a = col.id === cur.id;
             return (
-              <button key={col.id} role="tab" aria-selected={a} onClick={() => setMCol(col.id)} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 40, padding: '6px 14px 6px 12px', borderRadius: 999, ...pill(a), font: 'inherit', fontSize: 15.5, cursor: 'pointer' }}>
+              <button key={col.id} id={tabId(col.id)} role="tab" aria-selected={a} aria-controls={panelId} tabIndex={a ? 0 : -1} onClick={() => setMCol(col.id)} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 40, padding: '6px 14px 6px 12px', borderRadius: 999, ...pill(a), font: 'inherit', fontSize: 15.5, cursor: 'pointer' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: toneColor(c, col.tone) }} />{col.label}
                 <span style={{ fontSize: 13.5, color: 'var(--color-neutral-400)' }}>{items.filter((t) => t.status === col.id).length}</span>
               </button>
             );
           })}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, borderRadius: 12, background: `color-mix(in srgb, ${toneColor(c, cur.tone)} 7%, transparent)` }}>
+        <div id={panelId} role="tabpanel" aria-labelledby={tabId(cur.id)} style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, borderRadius: 12, background: `color-mix(in srgb, ${toneColor(c, cur.tone)} 7%, transparent)` }}>
           {cards.map((r) => <ActCard key={r.id} c={c} rec={r} big onClick={() => onOpen(r)} />)}
           {!cards.length && <div style={{ padding: '12px 4px', fontSize: 15.5, color: 'var(--color-neutral-500)' }}>Nessuna attività in questa colonna.</div>}
           <button onClick={() => onNew(cur.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '6px 8px', border: 0, borderRadius: 8, background: 'transparent', color: 'var(--color-neutral-400)', font: 'inherit', fontSize: 15.5, textAlign: 'left', cursor: 'pointer' }}><i className="ph ph-plus" />Aggiungi in «{cur.label}»</button>
@@ -70,6 +82,7 @@ export function Kanban({ c, items, mobile, onOpen, onNew }: { c: Section; items:
 
 /** Personalizzazione delle colonne di una sezione: rinomina, riordina, aggiungi, nascondi. */
 export function ColumnsEditor({ c, onClose, mobile }: { c: Section; onClose: () => void; mobile: boolean }) {
+  const dlg = useDialog(onClose);
   const { cols, setCols, docs, say } = useStore();
   const [list, setList] = useState<Column[]>(() => colsOf(cols, c).map((x) => ({ ...x })));
   const count = (id: string) => docs[c].filter((x) => x.status === id && x.kind !== 'materia' && x.kind !== 'lezione' && x.kind !== 'progetto' && x.kind !== 'libro' && x.kind !== 'nota').length;
@@ -86,7 +99,7 @@ export function ColumnsEditor({ c, onClose, mobile }: { c: Section; onClose: () 
   const hiddenWithItems = list.filter((x) => x.hidden && count(x.id) > 0);
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'grid', placeItems: mobile ? 'end stretch' : 'center', padding: mobile ? 0 : 20, background: 'color-mix(in srgb, var(--color-sidebar) 70%, transparent)' }}>
-      <div role="dialog" aria-modal="true" aria-label="Colonne della bacheca" className="dialog" style={{ width: mobile ? '100%' : 'min(560px,100%)', maxHeight: mobile ? '90%' : '100%', overflowY: 'auto', gap: 12, borderRadius: mobile ? '22px 22px 0 0' : undefined }}>
+      <div ref={dlg} role="dialog" aria-modal="true" aria-label="Colonne della bacheca" className="dialog" style={{ width: mobile ? '100%' : 'min(560px,100%)', maxHeight: mobile ? '90%' : '100%', overflowY: 'auto', gap: 12, borderRadius: mobile ? '22px 22px 0 0' : undefined }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div className="dialog-title" style={{ flex: 1 }}>Colonne della bacheca</div>
           <button onClick={onClose} aria-label="Chiudi" style={{ width: 44, height: 44, border: 0, background: 'none', color: 'var(--color-neutral-400)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><i className="ph ph-x" style={{ fontSize: 20 }} /></button>

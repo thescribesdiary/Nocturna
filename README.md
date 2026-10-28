@@ -104,19 +104,30 @@ Il contenuto deve iniziare con `{` e finire con `}`. Dopo averlo incollato nel s
 
 ### 7. Crea il file che pubblica l'app
 
+Servono due file, da creare una volta sola. Per ciascuno:
+
 1. Nella pagina principale del repository tocca **Add file → Create new file**.
-2. Come nome scrivi esattamente `.github/workflows/deploy.yml`. Le barre `/` creano da sole le cartelle.
-3. Incolla il contenuto del file `deploy.yml`, che ti ho dato in chat. Dopo il primo caricamento ne trovi una copia anche nel repository, in `setup/deploy.yml`.
+2. Come nome scrivi esattamente il percorso indicato sotto. Le barre `/` creano da sole le cartelle.
+3. Incolla il contenuto del file corrispondente, che ti ho dato in chat. Dopo il primo caricamento ne trovi una copia anche nel repository, nella cartella `setup/`.
 4. Tocca **Commit changes** e conferma.
 
-Questo passo si fa una volta sola. Da qui in poi lo zip basta caricarlo.
+| Percorso | Contenuto | A cosa serve |
+| --- | --- | --- |
+| `.github/workflows/deploy.yml` | `setup/deploy.yml` | Pubblica l'app, solo dal branch `main`. |
+| `.github/workflows/aggiorna-da-zip.yml` | `setup/aggiorna-da-zip.yml` | Estrae lo zip in un branch separato e apre una Pull Request da controllare. Non pubblica nulla. |
+
+Se Nocturna è già installata con il vecchio `deploy.yml`, **sostituisci prima `deploy.yml`** e solo dopo crea `aggiorna-da-zip.yml`: finché resta il vecchio file, uno zip caricato su `main` viene pubblicato senza controllo.
+
+Poi in **Settings → Actions → General**, in fondo alla pagina, attiva **Allow GitHub Actions to create and approve pull requests** e tocca **Save**. Se non lo attivi, l'aggiornamento funziona lo stesso ma la Pull Request la apri tu dal link che trovi nel riepilogo dell'esecuzione.
 
 ### 8. Carica lo zip
 
 1. Nella pagina principale del repository tocca **Add file → Upload files**.
 2. Scegli lo zip di Nocturna (per esempio `nocturna-v1.zip`) **così com’è**, senza estrarlo.
-3. Tocca **Commit changes**.
-4. Apri la scheda **Actions**: vedrai «Pubblica Nocturna» in esecuzione. GitHub estrae lo zip, compila l'app e la pubblica. Dopo 3–4 minuti deve comparire un segno di spunta verde.
+3. Tocca **Commit changes**. Se GitHub ti chiede di creare un nuovo branch e una Pull Request, va bene: accetta.
+4. Apri la scheda **Actions**: vedrai «Prepara aggiornamento da zip» in esecuzione. GitHub controlla lo zip (rifiuta collegamenti, percorsi sospetti e file troppo grandi), lo prova a compilare **senza** usare i secret e apre una Pull Request.
+5. Apri la scheda **Pull requests**, entra nella Pull Request «Aggiornamento di Nocturna da …» e guarda **Files changed**. Se le modifiche sono quelle attese, tocca **Merge pull request** e conferma.
+6. Solo ora parte «Pubblica Nocturna». Dopo 3–4 minuti deve comparire un segno di spunta verde.
 
 ### 9. Apri Nocturna
 
@@ -183,10 +194,10 @@ Dopo la prima apertura l'app funziona anche offline. Le modifiche si sincronizza
 Per ogni nuova fase riceverai uno zip aggiornato.
 
 1. Caricalo su GitHub come al passo 8, anche dal telefono.
-2. GitHub lo estrae, sostituisce i file vecchi e ripubblica da solo.
-3. Al successivo avvio, l'app sui dispositivi si aggiorna in automatico.
+2. GitHub lo estrae in un branch separato e apre una Pull Request: nulla viene pubblicato finché non la controlli e fai il merge.
+3. Dopo il merge GitHub ripubblica da solo e, al successivo avvio, l'app sui dispositivi si aggiorna in automatico.
 
-Se una fase modifica anche il file `deploy.yml`, te lo dirò e andrà aggiornato a mano come al passo 7.
+Lo zip non può modificare la cartella `.github`: se una fase cambia uno dei workflow, te lo dirò e andrà aggiornato a mano come al passo 7. I file dello zip si aggiungono o sostituiscono quelli esistenti, ma non cancellano i file che non contiene.
 
 ## Se qualcosa non va
 
@@ -212,6 +223,16 @@ Tutti i dati stanno in un unico database Firestore, in `users/{tuo-id}/{sezione}
 
 Le regole di sicurezza permettono di leggere e scrivere i dati solo agli account indicati in `ALLOWED_EMAIL`. I dati stanno in uno spazio condiviso (`users/condiviso`): dalla versione 2.1, al primo accesso di ogni account i dati che aveva nelle versioni precedenti vengono copiati lì una volta sola, senza cancellare l'originale. Gli elementi eliminati restano nel Cestino finché non li elimini definitivamente.
 
+Campi facoltativi aggiunti alle attività (i record precedenti che non li hanno continuano a funzionare e il backup li conserva):
+
+- `estimate` (Lettura e Scrittura, come già in Scuola e Lavoro): tempo stimato in testo libero, per esempio «1 h 30». Il pannello «La giornata» somma solo i valori che riesce a leggere («2 h», «45 min», «1h30», «1:15») e ignora gli altri.
+- `contentFormat` e `platforms` (Scrittura, solo per promozione e pubblicazione): formato del contenuto (post, reel, storia Instagram, citazione, estratto, teaser, annuncio, countdown, cover reveal, unboxing…) e piattaforme.
+- `seriesId` e `repeatDay` (attività ricorrenti): serie a cui appartiene l'occorrenza e giorno originale delle ricorrenze mensili.
+
+### Importare più libri da CSV
+
+In Lettura → Libri e collaborazioni → **Importa da CSV**. Il pulsante **Scarica il modello** fornisce un file con le colonne accettate, che sono le stesse del modulo «Aggiungi libro». Sono obbligatori Titolo, Autore, Editore e Formato. Prima di salvare puoi rivedere ogni riga: quelle non valide sono spiegate e non vengono importate, i possibili duplicati (stesso titolo e autore di un libro esistente, anche nel cestino, o ripetuti nel file) vengono saltati, a meno che tu non scelga di importarli come libri separati. Un libro esistente non viene mai modificato. Le colonne sconosciute o non importabili (per esempio la copertina) vengono segnalate.
+
 ## Per chi sviluppa
 
 ```bash
@@ -219,3 +240,25 @@ npm install
 npm run dev          # poi apri http://localhost:5173/?demo per provare l'interfaccia con dati d'esempio, senza Firebase
 npm run build
 ```
+
+### Controlli e test
+
+Servono Node.js 22 (22.6 o successivo) e, solo per i test delle regole, Java 21 o successivo. Nessun comando qui sotto usa il progetto Firebase reale o i suoi dati.
+
+```bash
+npm ci                                   # installazione riproducibile dal package-lock.json
+npm test                                 # test unitari (backup, ripristino, immagini, promemoria, ricorrenze, preparazione del deploy)
+npm run test:rules                       # regole Firestore sull'emulatore locale, progetto finto «demo-nocturna»
+npx tsc --noEmit                         # controllo dei tipi
+npm run build                            # build di produzione in dist/
+python3 -I .github/scripts/test_estrai_zip.py   # estrazione sicura degli zip di aggiornamento
+```
+
+Come leggere i risultati:
+
+- `npm test` e `npm run test:rules` terminano con un riepilogo `# pass N` / `# fail N`: il controllo è superato solo con `# fail 0` e codice di uscita 0.
+- `npm run test:rules` la prima volta scarica l'emulatore da Google (`storage.googleapis.com`). Se il download è bloccato (errore `403` o `download failed`) i test delle regole **non sono stati eseguiti**: non vanno considerati superati.
+- I test delle regole si rifiutano di partire se non trovano l'emulatore locale (`FIRESTORE_EMULATOR_HOST`) o se è impostata `GOOGLE_APPLICATION_CREDENTIALS`: avviali sempre con `npm run test:rules`.
+- `tsc` e `build` non stampano errori quando tutto è corretto.
+
+Su GitHub il workflow **Controlli** esegue gli stessi passi, in quest'ordine, su ogni Pull Request: test degli zip, verifica dei workflow, `npm ci`, test unitari, test delle regole, TypeScript e build. Il primo errore ferma il controllo.

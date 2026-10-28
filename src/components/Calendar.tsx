@@ -25,7 +25,7 @@ export const decorate = (t: HomeTask, today: string, cols?: ColsConfig, byType?:
 };
 
 const Warn = ({ label, size = 11 }: { label?: string; size?: number }) => (
-  <i className="ph-fill ph-warning" aria-label={label} style={{ color: 'var(--color-urgent)', fontSize: size, flex: 'none' }} />
+  <i className="ph-fill ph-warning" {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })} style={{ color: 'var(--color-urgent)', fontSize: size, flex: 'none' }} />
 );
 
 export const periodLabel = (view: CalView, anchor: string) => {
@@ -82,7 +82,7 @@ export function DeskCalendar({ tasks, view, anchor, sel, today, cols, onDay, onT
             const d = add(start, i), k = K(d), all = items(k), vis = all.length > 3 ? all.slice(0, 2) : all, isT = k === today, inM = d.getMonth() === m;
             return (
               <div key={k} onClick={() => onDay(k)} {...drop(k)} style={{ cursor: 'pointer', boxShadow: k === sel ? 'inset 0 0 0 1px var(--color-accent)' : 'none', display: 'flex', flexDirection: 'column', gap: 3, padding: 6, minWidth: 0, borderRight: `1px solid ${line}`, borderBottom: `1px solid ${line}`, background: inM ? 'transparent' : 'color-mix(in srgb, var(--color-sidebar) 55%, transparent)' }}>
-                <button onClick={(e) => { e.stopPropagation(); onDay(k); }} aria-label={d.getDate() + ' ' + MESI[d.getMonth()] + ', ' + all.length + ' attività: mostra nel pannello'} style={{ alignSelf: 'flex-start', width: 26, height: 26, borderRadius: '50%', border: 0, display: 'grid', placeItems: 'center', background: isT ? 'var(--color-accent)' : 'transparent', color: isT ? 'var(--color-bg)' : inM ? 'var(--color-text)' : 'var(--color-neutral-600)', font: 'inherit', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>{d.getDate()}</button>
+                <button onClick={(e) => { e.stopPropagation(); onDay(k); }} aria-label={d.getDate() + ' ' + MESI[d.getMonth()] + ', ' + all.length + ' attività: mostra nel pannello'} style={{ alignSelf: 'flex-start', width: 26, height: 26, borderRadius: '50%', border: 0, display: 'grid', placeItems: 'center', background: isT ? 'var(--color-accent)' : 'transparent', color: isT ? 'var(--color-on-accent)' : inM ? 'var(--color-text)' : 'var(--color-neutral-600)', font: 'inherit', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>{d.getDate()}</button>
                 {vis.map((ev) => (
                   <button key={ev.id} {...drag(ev)} onClick={(e) => { e.stopPropagation(); onTask(ev); }} title={ev.title} style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', minHeight: 22, padding: '2px 6px', border: 0, borderRadius: 4, background: ev.bg, color: 'var(--color-text)', font: 'inherit', fontSize: 13.5, textAlign: 'left', cursor: 'pointer', opacity: ev.opacity }}>
                     <Dot c={ev.color} s={6} />

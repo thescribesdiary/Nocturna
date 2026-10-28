@@ -2,12 +2,13 @@
 // (users/{uid}/{sezione}/{documento}) e offre le operazioni di scrittura a tutta l'app.
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch,
+  collection, deleteDoc, doc, onSnapshot, runTransaction, serverTimestamp, setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ColsConfig, ORDER, Rec, Section } from './sections';
+import { ColsConfig, ORDER, Rec, Section, isDone } from './sections';
 import { notifyFields, touchesReminders } from './reminders';
 import { LetturaCfg, letturaCfg, setLetturaCfg } from './schema';
+import { decideSpawn } from '../lib/recurrence';
 
 export type Theme = 'scuro' | 'contrasto' | 'chiaro';
 export type Prefs = { theme: Theme; summaryOnOpen: boolean; lessonsOnHome: boolean; autoTrash: boolean };
@@ -32,6 +33,8 @@ export type Store = {
   sync: SyncState;
   newId: (s: Section) => string;
   create: (s: Section, data: Omit<Rec, 'id'> & { id?: string }) => string;
+  /** Crea l'occorrenza successiva di una ricorrenza una sola volta, anche con più dispositivi (transazione). */
+  spawnOnce: (s: Section, sourceId: string, data: Rec) => Promise<'creata' | 'esistente' | 'senza-rete' | 'errore'>;
   update: (s: Section, id: string, patch: Record<string, any>) => void;
   trashIt: (s: Section, id: string) => void;
   /** Come trashIt, ma avvisa se ci sono elementi collegati. Restituisce false se l'utente rinuncia. */
@@ -144,6 +147,32 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
   const ref = (s: Section, id: string) => doc(db, 'users', uid, s, id);
   const newId = (s: Section) => doc(collection(db, 'users', uid, s)).id;
 
+  const spawnOnce: Store['spawnOnce'] = async (s, sourceId, data) => {
+    const rec = { ...data, deletedAt: null } as Rec;
+    const { id, ...body } = rec;
+    const full = { ...body, ...notifyFields(s, rec, colsRef.current), createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    try {
+      return await runTransaction(db, async (tx) => {
+        const src = await tx.get(ref(s, sourceId));
+        const next = await tx.get(ref(s, id));
+        const d = decideSpawn({ exists: src.exists(), spawnedNext: src.data()?.spawnedNext }, next.exists());
+        if (d.markSource) tx.update(ref(s, sourceId), { spawnedNext: true, updatedAt: serverTimestamp() });
+        if (d.createNext) tx.set(ref(s, id), full);
+        return d.createNext ? 'creata' : 'esistente';
+      });
+    } catch (e: any) {
+      // Le transazioni richiedono la rete. Senza rete si torna al comportamento precedente (scrittura in coda),
+      // che resta esposto alla sovrascrittura solo se un altro dispositivo completa la stessa attività nel frattempo.
+      if (e?.code === 'unavailable') {
+        setDoc(ref(s, id), full).catch(fail);
+        updateDoc(ref(s, sourceId), { spawnedNext: true, updatedAt: serverTimestamp() }).catch(fail);
+        return 'senza-rete';
+      }
+      fail(e);
+      return 'errore';
+    }
+  };
+
   const create: Store['create'] = (s, data) => {
     const id = data.id || newId(s);
     const rec = { ...data, id, deletedAt: null } as Rec;
@@ -195,7 +224,16 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
   const setProfile = (p: Partial<Profile>) => { setSetting('profilo', p); };
   const setLcfg: Store['setLcfg'] = (c) => { setSetting('lettura', { types: c.types, channels: c.channels }); };
   const setCols: Store['setCols'] = (s, c) => {
+    const before = colsRef.current, after: ColsConfig = { ...before, [s]: c };
     setDoc(doc(db, 'users', uid, 'impostazioni', 'colonne'), { [s]: c, updatedAt: serverTimestamp() }, { merge: true }).catch(fail);
+    // Se cambia quali colonne valgono come «completato», ricalcoliamo i promemoria delle attività interessate:
+    // altrimenti arriverebbero notifiche per attività ormai completate (o mancherebbero quelle riaperte).
+    const changed = raw[s].filter((r) => !r.deletedAt && isDone(before, s, r.status) !== isDone(after, s, r.status));
+    for (let i = 0; i < changed.length; i += 450) {
+      const b = writeBatch(db);
+      changed.slice(i, i + 450).forEach((r) => b.update(ref(s, r.id), { ...notifyFields(s, r, after) }));
+      b.commit().catch(fail);
+    }
   };
 
   // Svuotamento automatico del cestino (opzione): elimina ciò che è nel cestino da più di 30 giorni.
@@ -217,7 +255,7 @@ export function DataProvider({ uid, onDenied, children }: { uid: string; onDenie
 
   const value: Store = {
     uid, ready, docs, trash, prefs, profile, cols, sync,
-    newId, create, update, trashIt, removeRec, restore, destroy, emptyTrash, setPrefs, setProfile, setCols, lcfg, setLcfg,
+    newId, create, spawnOnce, update, trashIt, removeRec, restore, destroy, emptyTrash, setPrefs, setProfile, setCols, lcfg, setLcfg,
     toast, toastUndo, say,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

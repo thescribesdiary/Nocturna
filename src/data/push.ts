@@ -34,6 +34,7 @@ export async function enablePush(uid: string): Promise<PushState> {
 }
 
 export async function disablePush(uid: string) {
+  stopListening?.(); stopListening = null;
   const t = localStorage.getItem(KEY);
   if (t) await deleteDoc(doc(db, 'users', uid, 'dispositivi', t)).catch(() => {});
   await deleteToken(getMessaging(app)).catch(() => {});
@@ -41,14 +42,22 @@ export async function disablePush(uid: string) {
 }
 
 /** All'avvio: rinnova il token se le notifiche sono già attive e mostra quelle che arrivano con l'app aperta. */
+// Un solo ascoltatore per tutta la sessione: se initPush viene chiamata più volte
+// (nuovo rendering, cambio di account) le notifiche non vengono mostrate due volte.
+let stopListening: (() => void) | null = null;
+let currentSay: (m: string) => void = () => {};
+
 export async function initPush(uid: string, say: (m: string) => void) {
+  currentSay = say;
   if ((await pushState()) !== 'attive') return;
   await register(uid).catch(() => {});
-  onMessage(getMessaging(app), async (m) => {
+  if (stopListening) return;
+  stopListening = onMessage(getMessaging(app), async (m) => {
     const title = m.notification?.title || 'Nocturna', body = m.notification?.body || '';
-    say(title + (body ? ' · ' + body : ''));
+    currentSay(title + (body ? ' · ' + body : ''));
     const reg = await navigator.serviceWorker.ready;
-    reg.showNotification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png', tag: m.messageId });
+    // Stesso tag usato in background (ID del documento): una notifica nuova sostituisce quella vecchia invece di sommarsi.
+    reg.showNotification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png', tag: m.data?.tag || m.messageId });
   });
 }
 

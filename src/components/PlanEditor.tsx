@@ -74,13 +74,13 @@ export function PlanEditor({ st, rows, setRows, mobile }: { st: Store; rows: Pla
           </div>
           <input className="input" aria-label="Titolo dell'attività" value={r.title} onChange={(e) => patch(r.key, { title: e.target.value })} placeholder="Titolo" style={big} />
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 10 }}>
-            <div className="field" style={{ margin: 0, minWidth: 0 }}><label style={lab}>Data</label><input className="input" type="date" value={r.date} onChange={(e) => patch(r.key, { date: e.target.value })} style={big} /></div>
-            <div className="field" style={{ margin: 0, minWidth: 0 }}><label style={lab}>Ora (facoltativa)</label><input className="input" type="time" value={r.time} onChange={(e) => patch(r.key, { time: e.target.value })} style={big} /></div>
+            <div className="field" style={{ margin: 0, minWidth: 0 }}><label style={lab} htmlFor={`piano-${r.key}-data`}>Data</label><input id={`piano-${r.key}-data`} className="input" type="date" value={r.date} onChange={(e) => patch(r.key, { date: e.target.value })} style={big} /></div>
+            <div className="field" style={{ margin: 0, minWidth: 0 }}><label style={lab} htmlFor={`piano-${r.key}-ora`}>Ora (facoltativa)</label><input id={`piano-${r.key}-ora`} className="input" type="time" value={r.time} onChange={(e) => patch(r.key, { time: e.target.value })} style={big} /></div>
           </div>
           <QuickDates big={mobile} onPick={(k) => patch(r.key, { date: k })} />
           <div className="field" style={{ margin: 0 }}>
-            <label style={lab}><i className="ph ph-bell" /> Promemoria</label>
-            <select className="input" value={r.reminder} onChange={(e) => patch(r.key, { reminder: e.target.value })} style={big}>
+            <label style={lab} htmlFor={`piano-${r.key}-promemoria`}><i className="ph ph-bell" aria-hidden="true" /> Promemoria</label>
+            <select id={`piano-${r.key}-promemoria`} className="input" value={r.reminder} onChange={(e) => patch(r.key, { reminder: e.target.value })} style={big}>
               {REMIND.map((o) => <option key={o[0]} value={o[0]}>{o[1]}</option>)}
             </select>
             {!r.reminder && <span style={{ fontSize: 12.5, color: 'var(--color-neutral-500)' }}>Nessun avviso anticipato. Se c'è un orario, l'avviso arriva comunque 15 minuti prima.</span>}

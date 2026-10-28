@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CATS, ORDER } from '../data/sections';
 import { SyncState, useStore } from '../data/store';
+import { useDialog } from './useDialog';
 import { Route } from './ui';
 
 const SYNC: Record<SyncState, [string, string, string, string]> = {
@@ -83,14 +84,24 @@ export function MobileBar({ route, go }: { route: Route; go: (r: Route) => void 
     <>
       <div style={{ flex: 'none', paddingTop: 'env(safe-area-inset-top, 0px)', background: 'transparent' }}>
         <div style={{ height: 56, display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
-          <button onClick={() => setOpen(true)} aria-label="Apri menu" style={{ width: 44, height: 44, border: 0, borderRadius: 10, background: 'none', color: 'var(--color-text)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><i className="ph ph-list" style={{ fontSize: 24 }} /></button>
+          <button onClick={() => setOpen(true)} aria-label="Apri menu" aria-expanded={open} aria-controls="menu-principale" style={{ width: 44, height: 44, border: 0, borderRadius: 10, background: 'none', color: 'var(--color-text)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><i className="ph ph-list" style={{ fontSize: 24 }} /></button>
           <button onClick={() => go('')} className="gothic" style={{ fontSize: 27, lineHeight: 1, background: 'none', border: 0, color: 'var(--color-text)', padding: 0, cursor: 'pointer' }}>Nocturna</button>
           <div style={{ flex: 1 }} />
           <SyncButton compact />
         </div>
       </div>
-      {open && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 40, display: 'flex' }}>
+      {open && <MobileMenu route={route} nav={nav} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** Menu a comparsa del telefono: si chiude con Esc e tiene il focus al suo interno finché è aperto. */
+function MobileMenu({ route, nav, onClose }: { route: Route; nav: (r: Route) => void; onClose: () => void }) {
+  const dlg = useDialog(onClose);
+  const setOpen = (_: boolean) => onClose();
+  return (
+    <>
+        <div ref={dlg} id="menu-principale" role="dialog" aria-modal="true" aria-label="Menu principale" style={{ position: 'fixed', inset: 0, zIndex: 40, display: 'flex' }}>
           <nav aria-label="Menu principale" style={{ width: 300, maxWidth: '85vw', height: '100%', background: 'var(--color-sidebar)', padding: 'calc(env(safe-area-inset-top, 0px) + 20px) 14px calc(env(safe-area-inset-bottom, 0px) + 20px)', display: 'flex', flexDirection: 'column', gap: 2, boxShadow: 'var(--shadow-md)', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', padding: '0 0 18px 10px' }}>
               <span className="gothic" style={{ fontSize: 34, lineHeight: 1, flex: 1 }}>Nocturna</span>
@@ -100,9 +111,8 @@ export function MobileBar({ route, go }: { route: Route; go: (r: Route) => void 
             <div style={{ flex: 1, minHeight: 16 }} />
             {navUtil.map((it) => <NavButton key={it.key} it={it} mobile active={route === it.key} onClick={() => nav(it.key)} />)}
           </nav>
-          <button onClick={() => setOpen(false)} aria-label="Chiudi menu" style={{ flex: 1, border: 0, background: 'color-mix(in srgb, var(--color-sidebar) 65%, transparent)', cursor: 'pointer' }} />
+          <button onClick={() => setOpen(false)} aria-label="Chiudi menu" tabIndex={-1} style={{ flex: 1, border: 0, background: 'color-mix(in srgb, var(--color-sidebar) 65%, transparent)', cursor: 'pointer' }} />
         </div>
-      )}
     </>
   );
 }

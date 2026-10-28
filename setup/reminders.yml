@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: reminders
@@ -17,21 +17,36 @@ jobs:
   remind:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      - name: Invia i promemoria
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Installa firebase-admin (senza secret e senza script di installazione)
         run: |
           mkdir -p "$RUNNER_TEMP/r" && cp scripts/reminders.mjs "$RUNNER_TEMP/r/" && cd "$RUNNER_TEMP/r"
           echo '{"type":"module"}' > package.json
-          npm install --silent --no-audit --no-fund firebase-admin@13.10.0
-          node reminders.mjs
+          npm install --silent --ignore-scripts --no-audit --no-fund firebase-admin@13.10.0
+      - name: Invia i promemoria
+        working-directory: ${{ runner.temp }}/r
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node reminders.mjs
+
+  # GitHub sospende le esecuzioni programmate dopo 60 giorni senza modifiche al repository.
+  # Questo job non vede alcun secret: può solo creare un commit vuoto ogni 45 giorni.
+  mantieni-attivo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Mantieni attivi i promemoria
-        # GitHub sospende le esecuzioni programmate dopo 60 giorni senza modifiche al repository.
         run: |
           last=$(git log -1 --format=%ct)
           if [ $(( $(date +%s) - last )) -gt $(( 45 * 86400 )) ]; then

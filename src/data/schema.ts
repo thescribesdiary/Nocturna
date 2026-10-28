@@ -89,6 +89,10 @@ export const bookClosed = (b: Rec) => !!(b.volDone || b.volCancelled);
 
 // ── SCRITTURA ──────────────────────────────────────────────────────────
 export const W_TYPES: Opt[] = [['storia', 'Scrittura di una storia', 'ph-feather'], ['capitolo', 'Capitolo', 'ph-file-text'], ['revisione', 'Revisione', 'ph-magnifying-glass'], ['preparazione', 'Preparazione alla pubblicazione', 'ph-stack'], ['pubblicazione', 'Pubblicazione', 'ph-paper-plane-tilt'], ['promozione', 'Contenuto o promozione autoriale', 'ph-share-network'], ['corte', 'Attività della corte', 'ph-crown-simple'], ['altro', 'Altro', 'ph-dots-three-circle']];
+/** Formato e piattaforme dei contenuti di Scrittura (facoltativi, solo per promozione e pubblicazione). */
+export const W_FORMATS: Opt[] = [['post', 'Post', 'ph-article'], ['reel', 'Reel o video', 'ph-video-camera'], ['storia', 'Storia Instagram', 'ph-circle-dashed'], ['citazione', 'Citazione', 'ph-quotes'], ['estratto', 'Estratto', 'ph-text-align-left'], ['teaser', 'Teaser', 'ph-eye'], ['annuncio', 'Annuncio', 'ph-megaphone-simple'], ['countdown', 'Countdown', 'ph-timer'], ['cover', 'Cover reveal', 'ph-image'], ['unboxing', 'Unboxing', 'ph-package'], ['capitolo', 'Pubblicazione di un capitolo', 'ph-file-text'], ['uscita', 'Uscita del libro o della storia', 'ph-calendar-star'], ['altro', 'Altro', 'ph-dots-three-circle']];
+export const W_PLATFORMS: Opt[] = [['instagram', 'Instagram', 'ph-instagram-logo'], ['tiktok', 'TikTok', 'ph-tiktok-logo'], ['facebook', 'Facebook', 'ph-facebook-logo'], ['wattpad', 'Wattpad', 'ph-book-open'], ['sito', 'Blog o sito', 'ph-globe'], ['newsletter', 'Newsletter', 'ph-envelope-simple'], ['goodreads', 'Goodreads', 'ph-books'], ['amazon', 'Amazon', 'ph-shopping-cart'], ['altro', 'Altro', 'ph-dots-three-circle']];
+const promoType = (r: Rec) => r.type === 'promozione' || r.type === 'pubblicazione';
 export const PKINDS: Opt[] = ['Romanzo', 'Racconto', 'Raccolta', 'Oneshot', 'Storia a capitoli', 'Altro'].map((x) => [x, x]);
 const wprojects = ref('scrittura', 'progetto');
 export const W_PSTAT: Opt[] = [['idea', 'Da ideare', '#857a7d'], ['scrittura', 'In scrittura', '#a98ad6'], ['revisione', 'In revisione', '#c2925f'], ['pronto', 'Pronto per pubblicazione', '#e0c08a'], ['pubblicato', 'Pubblicato', '#86a58f'], ['pausa', 'In pausa', '#6f6669']];
@@ -284,7 +288,7 @@ export const KINDS: Record<string, KindDef> = {
   },
   'lettura/attivita': {
     section: 'lettura', kind: 'attivita', noun: 'attività', newLabel: 'Nuova attività', editLabel: 'Modifica attività', titleKey: 'title', required: [['title', 'Il titolo è obbligatorio.']],
-    blank: { type: 'recensione', book: null, date: '', time: '', notes: '', links: '', isCollab: false, collabName: '', materials: '', opNotes: '', agreed: '', reminder: '', channels: [], urgent: false, repeat: '' },
+    blank: { type: 'recensione', book: null, date: '', time: '', notes: '', links: '', isCollab: false, collabName: '', materials: '', opNotes: '', agreed: '', reminder: '', channels: [], urgent: false, repeat: '', estimate: '' },
     groups: [
       { fields: [
         { k: 'title', label: 'Titolo', t: 'text', ph: 'Es. Recensione «…»' },
@@ -293,7 +297,7 @@ export const KINDS: Record<string, KindDef> = {
         { k: 'status', label: 'Stato', t: 'status' },
         { k: 'channels', label: 'Canali', t: 'multi', opts: () => lChannels() },
       ] },
-      { title: 'Quando', fields: [...when, { k: 'reminder', label: 'Promemoria', t: 'choice', opts: REMIND }, repeat] },
+      { title: 'Quando', fields: [...when, { k: 'reminder', label: 'Promemoria', t: 'choice', opts: REMIND }, repeat, { k: 'estimate', label: 'Tempo stimato per prepararlo', t: 'text', half: true, ph: 'Es. 1 h 30' }] },
       { title: 'Collaborazione', fields: [
         { k: 'isCollab', label: 'Fa parte di una collaborazione', t: 'bool' },
         { k: 'collabName', label: 'Collaborazione o interlocutore', t: 'text', show: is('isCollab', true) },
@@ -310,14 +314,17 @@ export const KINDS: Record<string, KindDef> = {
   },
   'scrittura/attivita': {
     section: 'scrittura', kind: 'attivita', noun: 'attività', newLabel: 'Nuova attività', editLabel: 'Modifica attività', titleKey: 'title', required: [['title', 'Il titolo è obbligatorio.']],
-    blank: { type: 'storia', project: null, date: '', time: '', notes: '', urgent: false, repeat: '' },
+    blank: { type: 'storia', project: null, date: '', time: '', notes: '', urgent: false, repeat: '', contentFormat: '', platforms: [], estimate: '' },
     groups: [{ fields: [
       { k: 'title', label: 'Titolo', t: 'text' },
       { k: 'type', label: 'Tipo di attività', t: 'choice', opts: W_TYPES },
+      { k: 'contentFormat', label: 'Formato del contenuto (facoltativo)', t: 'choice', opts: W_FORMATS, show: promoType },
+      { k: 'platforms', label: 'Piattaforme (facoltative)', t: 'multi', opts: W_PLATFORMS, show: promoType },
       { k: 'status', label: 'Stato', t: 'status' },
       { k: 'project', label: 'Progetto o storia (facoltativo)', t: 'select', opts: wprojects },
       { k: 'date', label: 'Scadenza o pubblicazione', t: 'date', half: true },
       { k: 'time', label: 'Ora', t: 'time', half: true },
+      { k: 'estimate', label: 'Tempo stimato per prepararlo', t: 'text', half: true, ph: 'Es. 1 h 30' },
       repeat,
       { k: 'urgent', label: 'Urgente', t: 'bool' },
       { k: 'notes', label: 'Note brevi', t: 'textarea' },

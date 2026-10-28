@@ -6,6 +6,7 @@ import { lessonTasks, tomorrowOf, useHomeTasks, useToday } from '../data/hooks';
 import { useTaskActions } from '../data/actions';
 import { useRecordEditor } from '../components/CalendarForm';
 import { bookDeadlines, monthBooks } from '../data/books';
+import { formatDuration, sumDurations } from '../lib/duration';
 import { LetturaCalendarExtras } from './views';
 import { CalToolbar, CalView, DeskCalendar, MobileCalendar, decorate, sortT } from '../components/Calendar';
 import { Check, Dot, H1, Seg, hScroll, pill, tint } from '../components/ui';
@@ -73,7 +74,7 @@ export function Home({ mobile }: { mobile: boolean }) {
   }, []);
   const today = useToday(), tomorrow = tomorrowOf(today);
   const all = useHomeTasks();
-  const rec = useRecordEditor(mobile);
+  const rec = useRecordEditor(mobile, true);
   const act = useTaskActions();
   const ed = { ...act, openEdit: rec.openEdit, dialog: rec.dialog, openNew: (p: { date: string }) => rec.openNew({ ...p, cat: filters.length === 1 ? filters[0] : undefined }) };
   const [filters, setFilters] = useState<Section[]>([]);
@@ -96,7 +97,7 @@ export function Home({ mobile }: { mobile: boolean }) {
     ? <LetturaCalendarExtras month={month} mobile={mobile} legend={false} onBook={(id) => rec.openEdit({ id: 'libro:' + id, src: id, cat: 'lettura' } as HomeTask)} />
     : null;
   const openTask = (t: HomeTask) => {
-    if (t.id.startsWith('lez:')) { try { localStorage.setItem('nocturna-ui-scuola', JSON.stringify({ tab: 'orario' })); } catch {} window.location.hash = '#/scuola'; } else ed.openEdit(t);
+    if (t.id.startsWith('lez:')) { try { const prev = JSON.parse(localStorage.getItem('nocturna-ui-scuola') || '{}'); localStorage.setItem('nocturna-ui-scuola', JSON.stringify({ ...(prev && typeof prev === 'object' ? prev : {}), tab: 'orario' })); } catch {} window.location.hash = '#/scuola'; } else ed.openEdit(t);
   };
   const todayT = all.filter((t) => t.date === today).sort(sortT);
   const tomT = all.filter((t) => t.date === tomorrow).sort(sortT);
@@ -152,9 +153,11 @@ export function Home({ mobile }: { mobile: boolean }) {
   const other = !!sel && sel !== today && sel !== tomorrow;
   const selT = other ? all.filter((t) => t.date === sel).sort(sortT) : [];
   const selDone = selT.filter((t) => t.done).length;
+  // Tempo stimato delle attività ancora da fare (solo i valori leggibili, es. «2 h», «45 min»).
+  const est = (items: HomeTask[]) => { const m = sumDurations(items.filter((t) => !t.done).map((t) => t.estimate)).minutes; return m ? ' · circa ' + formatDuration(m) + ' stimate' : ''; };
   const groups = other
-    ? [{ label: 'Giorno selezionato', sub: shortDay(sel!), count: selT.length - selDone + ' da fare', items: selT }]
-    : [{ label: 'Oggi', sub: shortDay(today), count: todayT.length - doneN + ' da fare', items: todayT }, { label: 'Domani', sub: shortDay(tomorrow), count: tomT.length + ' attività', items: tomT }];
+    ? [{ label: 'Giorno selezionato', sub: shortDay(sel!), count: selT.length - selDone + ' da fare' + est(selT), items: selT }]
+    : [{ label: 'Oggi', sub: shortDay(today), count: todayT.length - doneN + ' da fare' + est(todayT), items: todayT }, { label: 'Domani', sub: shortDay(tomorrow), count: tomT.length + ' attività' + est(tomT), items: tomT }];
   const divider = 'linear-gradient(to bottom, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent)';
 
   return (

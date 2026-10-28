@@ -3,11 +3,13 @@ import { auth, logout } from '../firebase';
 import { Theme, useStore } from '../data/store';
 import { CATS, ORDER, Section, catVar } from '../data/sections';
 import { ParsedBackup, exportBackup, readBackup, restoreBackup } from '../data/backup';
+import { safeImage } from '../lib/safe';
 import { PushState, disablePush, enablePush, pushState, testNotification } from '../data/push';
 import { H1, Route, Seg } from '../components/ui';
 import { SummaryDialog } from '../components/Summary';
 import { ColumnsEditor } from '../components/Kanban';
 import { resizeImage } from '../components/RecordForm';
+import { useDialog } from '../components/useDialog';
 import { DEFAULT_LCFG, LChan, LType, LetturaCfg } from '../data/schema';
 
 const ICONS = ['ph-pen-nib', 'ph-flag-pennant', 'ph-image', 'ph-megaphone-simple', 'ph-article', 'ph-package', 'ph-calendar-star', 'ph-share-network', 'ph-sparkle', 'ph-microphone', 'ph-video-camera', 'ph-chat-circle-text', 'ph-heart', 'ph-star', 'ph-bookmark-simple', 'ph-dots-three-circle'];
@@ -15,6 +17,7 @@ const slug = (t: string, taken: string[]) => { let b = t.toLowerCase().normalize
 
 /** Tipi di attività e canali del piano editoriale di Lettura. */
 function LetturaEditor({ mobile, onClose }: { mobile: boolean; onClose: () => void }) {
+  const dlg = useDialog(onClose);
   const st = useStore();
   const [d, setD] = useState<LetturaCfg>(() => JSON.parse(JSON.stringify(st.lcfg)));
   const used = (k: 'type' | 'channels', id: string) => st.docs.lettura.filter((x) => x.kind === 'attivita' && (k === 'type' ? x.type === id : (x.channels || []).includes(id))).length;
@@ -29,7 +32,7 @@ function LetturaEditor({ mobile, onClose }: { mobile: boolean; onClose: () => vo
   const del = (n: number, f: () => void) => <button className="btn btn-ghost btn-icon" onClick={() => { if (n && !window.confirm('È usato da ' + n + (n === 1 ? ' attività' : ' attività') + ', che resteranno con «Altro». Eliminarlo?')) return; f(); }} aria-label="Elimina" style={{ color: 'var(--color-urgent)', flex: 'none' }}><i className="ph ph-trash" /></button>;
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'grid', placeItems: mobile ? 'end stretch' : 'center', padding: mobile ? 0 : 20, background: 'color-mix(in srgb, var(--color-sidebar) 70%, transparent)' }}>
-      <div role="dialog" aria-modal="true" aria-label="Tipi e canali di Lettura" className="dialog" style={{ width: mobile ? '100%' : 'min(600px,100%)', maxHeight: mobile ? '92%' : '100%', overflowY: 'auto', gap: 14, borderRadius: mobile ? '22px 22px 0 0' : undefined }}>
+      <div ref={dlg} role="dialog" aria-modal="true" aria-label="Tipi e canali di Lettura" className="dialog" style={{ width: mobile ? '100%' : 'min(600px,100%)', maxHeight: mobile ? '92%' : '100%', overflowY: 'auto', gap: 14, borderRadius: mobile ? '22px 22px 0 0' : undefined }}>
         <div className="dialog-title">Tipi e canali di Lettura</div>
         <p style={muted}>Sono le voci del piano editoriale dei libri e delle attività di The Scribe's Diary. Il colore si vede nei pallini del calendario e nella legenda.</p>
         <span style={{ fontSize: 12.5, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--color-neutral-400)' }}>Tipi di attività</span>
@@ -90,10 +93,11 @@ function Switch({ on, onClick, label }: { on: boolean; onClick: () => void; labe
   );
 }
 
-function Avatar({ src, name, size = 84 }: { src: string; name: string; size?: number }) {
+function Avatar({ src: raw, name, size = 84 }: { src: string; name: string; size?: number }) {
+  const src = safeImage(raw);
   const initials = (name || '?').split(/\s+/).map((x) => x.charAt(0)).join('').slice(0, 2).toUpperCase();
   return (
-    <div style={{ width: size, height: size, flex: 'none', borderRadius: '50%', overflow: 'hidden', background: src ? `url(${src}) center/cover` : 'color-mix(in srgb, var(--color-accent) 14%, var(--color-surface))', boxShadow: '0 0 0 1px var(--color-neutral-700)', display: 'grid', placeItems: 'center' }}>
+    <div style={{ width: size, height: size, flex: 'none', borderRadius: '50%', overflow: 'hidden', background: src ? `url("${src}") center/cover` : 'color-mix(in srgb, var(--color-accent) 14%, var(--color-surface))', boxShadow: '0 0 0 1px var(--color-neutral-700)', display: 'grid', placeItems: 'center' }}>
       {!src && <span className="gothic" style={{ fontSize: size * 0.42, color: 'var(--color-accent-200)' }}>{initials}</span>}
     </div>
   );
@@ -140,13 +144,13 @@ export function Account({ page, mobile, go }: { page: 'profilo' | 'impostazioni'
               <Avatar src={edit.avatar} name={edit.name} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label className="btn btn-secondary" style={{ minHeight: 42, position: 'relative', cursor: 'pointer' }}><i className="ph ph-upload-simple" />Scegli immagine
-                  <input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setEdit({ ...edit, avatar: await resizeImage(f, 160, true) }); }} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+                  <input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { setEdit({ ...edit, avatar: await resizeImage(f, 160, true) }); } catch { st.say('Immagine non valida.'); } }} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
                 </label>
                 {edit.avatar && <button className="btn btn-ghost" onClick={() => setEdit({ ...edit, avatar: '' })} style={{ minHeight: 36, color: 'var(--color-neutral-300)' }}>Rimuovi immagine</button>}
               </div>
             </div>
-            <div className="field"><label>Nome visualizzato</label><input className="input" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} style={{ minHeight: 46, fontSize: 16 }} /></div>
-            <div className="field"><label>Breve descrizione <span style={{ color: 'var(--color-neutral-500)' }}>· facoltativa</span></label><textarea className="input" value={edit.bio} onChange={(e) => setEdit({ ...edit, bio: e.target.value })} style={{ minHeight: 80, fontSize: 15.5, fontFamily: 'inherit' }} /></div>
+            <div className="field"><label htmlFor="profilo-nome">Nome visualizzato</label><input id="profilo-nome" className="input" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} style={{ minHeight: 46, fontSize: 16 }} /></div>
+            <div className="field"><label htmlFor="profilo-bio">Breve descrizione <span style={{ color: 'var(--color-neutral-500)' }}>· facoltativa</span></label><textarea id="profilo-bio" className="input" value={edit.bio} onChange={(e) => setEdit({ ...edit, bio: e.target.value })} style={{ minHeight: 80, fontSize: 15.5, fontFamily: 'inherit' }} /></div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-primary" onClick={() => { st.setProfile({ name: edit.name.trim(), bio: edit.bio.trim(), avatar: edit.avatar }); setEdit(null); st.say('Profilo salvato.'); }} style={{ minHeight: 44, paddingInline: 18 }}>Salva</button>
               <button className="btn btn-secondary" onClick={() => setEdit(null)} style={{ minHeight: 44 }}>Annulla</button>
@@ -197,7 +201,7 @@ export function Account({ page, mobile, go }: { page: 'profilo' | 'impostazioni'
             {restore.parsed ? (
               <>
                 <span style={muted}>{restore.parsed.count} elementi{restore.parsed.exportedAt ? ' · creato il ' + new Date(restore.parsed.exportedAt).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' }) : ''}</span>
-                <p style={{ margin: 0, fontSize: 14.5, color: 'var(--color-urgent)' }}>Il ripristino sostituisce tutti i dati attuali, su tutti i dispositivi. Prima, se vuoi, crea un backup di quelli di adesso.</p>
+                <p style={{ margin: 0, fontSize: 14.5, color: 'var(--color-urgent)' }}>Il ripristino sostituisce tutti i dati attuali, su tutti i dispositivi. Prima di iniziare, Nocturna scarica automaticamente un backup dei dati di adesso.</p>
                 <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontSize: 15, cursor: 'pointer' }}><input type="checkbox" checked={restore.ack} onChange={(e) => setRestore({ ...restore, ack: e.target.checked })} />Ho capito: sostituisci i dati attuali</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="btn btn-secondary" onClick={() => setRestore(null)}>Annulla</button>

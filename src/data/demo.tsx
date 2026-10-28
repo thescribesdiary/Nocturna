@@ -71,6 +71,12 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     newId: () => 'n' + Date.now() + n++,
     create: (s, data) => { const id = data.id || 'n' + Date.now() + n++; setRaw((r) => ({ ...r, [s]: [...r[s], { ...data, id, deletedAt: null } as Rec] })); return id; },
     update: patch,
+    spawnOnce: async (s, sourceId, data) => {
+      let created = false;
+      setRaw((r) => (r[s].some((x) => x.id === data.id) ? r : (created = true, { ...r, [s]: [...r[s], { ...data, deletedAt: null } as Rec] })));
+      patch(s, sourceId, { spawnedNext: true });
+      return created ? 'creata' : 'esistente';
+    },
     trashIt: (s, id) => { patch(s, id, { deletedAt: Date.now() }); say('Spostato nel cestino.', () => patch(s, id, { deletedAt: null })); },
     removeRec: (s, id) => { patch(s, id, { deletedAt: Date.now() }); say('Spostato nel cestino.', () => patch(s, id, { deletedAt: null })); return true; },
     restore: (s, id) => patch(s, id, { deletedAt: null }),

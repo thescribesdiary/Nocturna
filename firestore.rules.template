@@ -1,7 +1,8 @@
 rules_version = '2';
 // Regole di sicurezza di Nocturna.
 // Questo file viene generato automaticamente: gli indirizzi autorizzati arrivano dal secret ALLOWED_EMAIL
-// (uno o più indirizzi Google separati da virgola).
+// (uno o più indirizzi Google separati da virgola). Tutto ciò che non è permesso qui sotto è vietato.
+// Lo script dei promemoria usa le credenziali di amministratore e non è soggetto a queste regole.
 service cloud.firestore {
   match /databases/{database}/documents {
     function autorizzato() {
@@ -9,10 +10,74 @@ service cloud.firestore {
         && request.auth.token.email_verified == true
         && request.auth.token.email.lower() in [__ALLOWED_EMAILS__];
     }
-    // «condiviso»: i dati comuni a tutti gli account autorizzati.
-    // Lo spazio personale (uid) resta leggibile dal suo proprietario, per copiare i dati delle versioni precedenti.
+    function nuovo() { return request.resource.data; }
+    // Campi cambiati da un aggiornamento: si controllano solo questi, così un campo vecchio non blocca le modifiche.
+    function cambiati() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function sezione(s) { return s in ['scuola', 'lavoro', 'lettura', 'scrittura']; }
+    function immagine(v) { return v == null || (v is string && v.size() <= 1000000); }
+    // Controlli di base sui campi delicati, applicati solo ai campi elencati in `campi`
+    // (un campo tolto da un aggiornamento, es. dal ripristino di un backup, è sempre ammesso).
+    function campiValidi(d, campi) {
+      return d.keys().size() <= 200
+        && (!('image' in campi) || immagine(d.get('image', null)))
+        && (!('avatar' in campi) || immagine(d.get('avatar', null)))
+        && (!('deletedAt' in campi) || d.get('deletedAt', null) == null || d.deletedAt is number)
+        && (!('createdAt' in campi) || d.get('createdAt', null) == null || d.createdAt is timestamp)
+        && (!('updatedAt' in campi) || d.get('updatedAt', null) == null || d.updatedAt is timestamp);
+    }
+
+    // Documento di un dispositivo per le notifiche: token uguale all'ID e pochi campi noti.
+    function dispositivoValido(id) {
+      return nuovo().get('token', '') == id && id.size() <= 4096
+        && nuovo().get('ua', '') is string && nuovo().get('ua', '').size() <= 200
+        && nuovo().get('lastSeen', null) is timestamp;
+    }
+
+    // Dati condivisi: tutti gli account autorizzati li leggono, creano, modificano ed eliminano.
+    match /users/condiviso/{s}/{id} {
+      allow read, delete: if autorizzato() && sezione(s);
+      allow create: if autorizzato() && sezione(s) && campiValidi(nuovo(), nuovo().keys());
+      allow update: if autorizzato() && sezione(s) && campiValidi(nuovo(), cambiati());
+    }
+
+    // Impostazioni condivise (tema, profilo, colonne, tipi di Lettura…), tranne il segno della migrazione.
+    match /users/condiviso/impostazioni/{id} {
+      allow read: if autorizzato();
+      allow delete: if autorizzato() && id != 'spazio';
+      allow create: if autorizzato() && id != 'spazio' && campiValidi(nuovo(), nuovo().keys());
+      allow update: if autorizzato() && id != 'spazio' && campiValidi(nuovo(), cambiati());
+    }
+
+    // Segno della migrazione: ogni account può solo aggiungere (o aggiornare) la propria voce in `merged`.
+    // Nessuno può togliere voci altrui né cancellarlo. Eventuali createdAt/updatedAt già presenti restano ammessi.
+    match /users/condiviso/impostazioni/spazio {
+      allow read: if autorizzato();
+      allow create: if autorizzato() && nuovo().keys().hasOnly(['merged']) && nuovo().merged is map
+        && nuovo().merged.keys().hasOnly([request.auth.uid]) && nuovo().merged[request.auth.uid] is int;
+      allow update: if autorizzato() && cambiati().hasOnly(['merged']) && nuovo().merged is map
+        && (('merged' in resource.data && resource.data.merged is map)
+          ? (nuovo().merged.diff(resource.data.merged).affectedKeys().hasOnly([request.auth.uid])
+             && nuovo().merged.keys().hasAll(resource.data.merged.keys()))
+          : nuovo().merged.keys().hasOnly([request.auth.uid]))
+        && nuovo().merged[request.auth.uid] is int;
+      allow delete: if false;
+    }
+
+    // Dispositivi per le notifiche push: un documento per token, solo con i campi previsti.
+    match /users/condiviso/dispositivi/{token} {
+      allow read, delete: if autorizzato();
+      allow create: if autorizzato() && nuovo().keys().hasOnly(['token', 'ua', 'lastSeen']) && dispositivoValido(token);
+      // Aggiornamento: si possono cambiare solo i campi previsti (eventuali campi vecchi restano com'erano).
+      allow update: if autorizzato() && cambiati().hasOnly(['token', 'ua', 'lastSeen']) && dispositivoValido(token);
+    }
+    // Spazio personale delle versioni precedenti: lo legge solo il proprietario, per la copia nello spazio condiviso.
+    // Unica scrittura ammessa: togliere i promemoria (notifyAt = null, notifyQueue = []) durante la migrazione.
     match /users/{space}/{document=**} {
-      allow read, write: if autorizzato() && (space == 'condiviso' || space == request.auth.uid);
+      allow read: if autorizzato() && space != 'condiviso' && space == request.auth.uid;
+      allow update: if autorizzato() && space != 'condiviso' && space == request.auth.uid
+        && cambiati().hasOnly(['notifyAt', 'notifyQueue'])
+        && (!('notifyAt' in nuovo()) || nuovo().notifyAt == null)
+        && (!('notifyQueue' in nuovo()) || (nuovo().notifyQueue is list && nuovo().notifyQueue.size() == 0));
     }
   }
 }

@@ -19,6 +19,11 @@ if (pasted.trim()) {
 }
 for (const k of ['apiKey', 'authDomain', 'projectId', 'appId'])
   if (!fb[k]) fail(`Nella configurazione Firebase manca "${k}". Ricopia nel secret FIREBASE_CONFIG tutto il blocco firebaseConfig della console.`);
+// Nessun valore può contenere a capo o caratteri di controllo (finirebbero in GITHUB_ENV o nel codice generato).
+for (const [k, v] of Object.entries(fb))
+  if (typeof v !== 'string' || /[\u0000-\u001f\u007f]/.test(v)) fail(`Nella configurazione Firebase il valore di "${k}" non è valido.`);
+// ID progetto Google Cloud: 6-30 caratteri, minuscole, cifre e trattini.
+if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(fb.projectId)) fail('Nella configurazione Firebase "projectId" non è un ID progetto valido.');
 const vm = pasted.match(/vapidKey\s*["']?\s*:\s*["']([^"']+)["']/);
 const vapidKey = ((vm && vm[1]) || process.env.FIREBASE_VAPID_KEY || fileCfg.vapidKey || '').trim();
 writeFileSync('nocturna.config.js', `// Generato automaticamente durante la pubblicazione.\nexport default ${JSON.stringify({ firebase: fb, vapidKey }, null, 2)};\n`);

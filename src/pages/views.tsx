@@ -8,6 +8,8 @@ import { copyBook, monthBooks, planOf } from '../data/books';
 import { ActCard, FieldList, Panel, SubTitle, catKicker } from '../components/Detail';
 import { Seg, pill, tint } from '../components/ui';
 import { Rosette } from '../components/Ornaments';
+import { safeImage } from '../lib/safe';
+import { BookImport } from '../components/BookImport';
 import type { UI } from './Section';
 
 const surface: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', border: 0, borderRadius: 10, background: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', color: 'var(--color-text)', font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0 };
@@ -274,7 +276,7 @@ export function ProjectDetail({ ui, rec, onClose }: { ui: UI; rec: Rec; onClose:
       ))}>
       {rec.cover && <img src={rec.cover} alt={'Copertina di ' + (rec.title || rec.name)} style={{ width: 140, borderRadius: 6, boxShadow: 'var(--shadow-md)' }} />}
       <FieldList def={kindDef(c, 'progetto')} rec={rec} skip={['name', 'title', 'cover']} />
-      {!isL && inspo.length > 0 && <><SubTitle>Ispirazione</SubTitle>{inspo.map((n) => <button key={n.id} onClick={() => ui.openDetail('ispirazione', n.id)} style={{ ...surface, flexDirection: 'row', alignItems: 'center', gap: 10 }}><span style={{ width: 44, height: 44, flex: 'none', borderRadius: 6, background: n.image ? `url(${n.image}) center/cover` : tint('var(--cat-scrittura)', 16) }} /><span style={{ fontSize: 15 }}>{n.title}</span></button>)}</>}
+      {!isL && inspo.length > 0 && <><SubTitle>Ispirazione</SubTitle>{inspo.map((n) => <button key={n.id} onClick={() => ui.openDetail('ispirazione', n.id)} style={{ ...surface, flexDirection: 'row', alignItems: 'center', gap: 10 }}><span style={{ width: 44, height: 44, flex: 'none', borderRadius: 6, background: safeImage(n.image) ? `url("${safeImage(n.image)}") center/cover` : tint('var(--cat-scrittura)', 16) }} /><span style={{ fontSize: 15 }}>{n.title}</span></button>)}</>}
       <SubTitle>Attività collegate</SubTitle>
       {acts.map((x) => <ActCard key={x.id} c={c} rec={x} onClick={() => ui.openDetail(isL ? 'task' : 'attivita', x.id)} />)}
       {!acts.length && <p style={{ margin: 0, ...muted }}>Nessuna attività collegata.</p>}
@@ -347,6 +349,7 @@ export function BooksView({ ui }: { ui: UI }) {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<string[]>([]);
   const [only, setOnly] = useState<'' | 'tbr' | 'collab' | 'chiusi'>('');
+  const [importing, setImporting] = useState(false);
   const [mode, setModeS] = useState<'schede' | 'copertine' | 'elenco' | 'delegati'>(() => { try { return (localStorage.getItem('nocturna-books-view') as any) || 'schede'; } catch { return 'schede'; } });
   const setMode = (m: typeof mode) => { setModeS(m); try { localStorage.setItem('nocturna-books-view', m); } catch {} };
   const books = st.docs.lettura.filter((x) => x.kind === 'libro')
@@ -360,6 +363,7 @@ export function BooksView({ ui }: { ui: UI }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         {!ui.mobile && <AddBtn label="Aggiungi libro" onClick={() => ui.openForm('libro', { added: today })} />}
+        <button className="btn btn-ghost" onClick={() => setImporting(true)} style={{ minHeight: ui.mobile ? 44 : 38, color: 'var(--color-neutral-300)' }}><i className="ph ph-file-csv" aria-hidden="true" />Importa da CSV</button>
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca titolo, autore, genere…" aria-label="Cerca libri" style={{ flex: ui.mobile ? '1 1 100%' : '0 1 300px', minHeight: ui.mobile ? 44 : 36 }} />
         {chip(only === 'tbr', () => setOnly(only === 'tbr' ? '' : 'tbr'), 'TBR')}
         {chip(only === 'collab', () => setOnly(only === 'collab' ? '' : 'collab'), 'Collaborazioni')}
@@ -375,6 +379,7 @@ export function BooksView({ ui }: { ui: UI }) {
           {books.map((b) => <BookCard key={b.id} ui={ui} b={b} today={today} />)}
         </div>
       ) : <Empty icon="ph-books" title="Nessun libro" text="Aggiungi i libri da leggere, quelli in lettura e le collaborazioni." action={<AddBtn label="Aggiungi un libro" onClick={() => ui.openForm('libro', { added: today })} />} />}
+      {importing && <BookImport mobile={ui.mobile} onClose={() => setImporting(false)} />}
     </div>
   );
 }
@@ -634,7 +639,7 @@ export function InspirationView({ ui }: { ui: UI }) {
         <div style={{ columnWidth: ui.mobile ? 150 : 230, columnGap: 12 }}>
           {items.map((x) => (
             <button key={x.id} className="cover-card" onClick={() => ui.openDetail('ispirazione', x.id)} style={{ ...surface, breakInside: 'avoid', width: '100%', marginBottom: 12, padding: 0, overflow: 'hidden' }}>
-              {x.image && <img src={x.image} alt="" loading="lazy" style={{ width: '100%', display: 'block' }} />}
+              {safeImage(x.image) && <img src={safeImage(x.image)} alt="" loading="lazy" style={{ width: '100%', display: 'block' }} />}
               <span style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '10px 12px 12px' }}>
                 <span style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.25 }}>{x.title}</span>
                 {x.tag && <span><Tag>{x.tag}</Tag></span>}
@@ -654,7 +659,7 @@ export function InspirationDetail({ ui, rec, onClose }: { ui: UI; rec: Rec; onCl
   const project = rec.project ? st.docs.scrittura.find((x) => x.id === rec.project) : null;
   return (
     <Panel title={rec.title} kicker={catKicker('scrittura', 'Ispirazione')} mobile={ui.mobile} onClose={onClose} actions={editDel(ui, 'ispirazione', rec, onClose, st)}>
-      {rec.image && <a href={rec.image} target="_blank" rel="noopener noreferrer"><img src={rec.image} alt={rec.title} style={{ width: '100%', borderRadius: 8, boxShadow: 'var(--shadow-md)' }} /></a>}
+      {safeImage(rec.image) && <a href={safeImage(rec.image)} target="_blank" rel="noopener noreferrer"><img src={safeImage(rec.image)} alt={rec.title} style={{ width: '100%', borderRadius: 8, boxShadow: 'var(--shadow-md)' }} /></a>}
       {rec.tag && <div><Tag>{rec.tag}</Tag></div>}
       {rec.link && <a className="btn btn-secondary" href={href(rec.link)} target="_blank" rel="noopener noreferrer" style={{ alignSelf: 'flex-start', textDecoration: 'none' }}><i className="ph ph-arrow-square-out" />{rec.linkLabel || host(rec.link)}</a>}
       {rec.notes && <p style={{ margin: 0, fontSize: 15.5, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{rec.notes}</p>}

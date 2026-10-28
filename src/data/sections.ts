@@ -111,6 +111,8 @@ export type HomeTask = {
   label?: string;
   /** Colore del tipo di attività (Lettura), usato dai pallini del calendario della sezione. */
   dot?: string;
+  /** Tempo stimato scritto nell'attività (testo libero, es. «1 h 30»), se presente. */
+  estimate?: string;
 };
 
 /** La data che un'attività mostra nel calendario (regole dei prototipi). */
@@ -133,6 +135,7 @@ export const toHome = (c: Section, x: Rec, cfg?: ColsConfig): HomeTask => ({
   repeat: x.repeat || '',
   done: isDone(cfg, c, x.status),
   dot: c === 'lettura' ? lTypeColor(x.type) : undefined,
+  estimate: typeof x.estimate === 'string' && x.estimate.trim() ? x.estimate : undefined,
 });
 
 /** Traduce una modifica fatta in Home nei campi del documento d'origine. */

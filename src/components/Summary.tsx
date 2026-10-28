@@ -5,6 +5,7 @@ import { useStore } from '../data/store';
 import { tomorrowOf, useHomeTasks, useToday } from '../data/hooks';
 import { sortT } from './Calendar';
 import { ArchDivider, Corners } from './Ornaments';
+import { useDialog } from './useDialog';
 import { HomeTask } from '../data/sections';
 
 const BK_KEY = 'nocturna-backup-snooze';
@@ -38,11 +39,12 @@ export function useSummaryGroups() {
 }
 
 export function SummaryDialog({ onClose, preview }: { onClose: () => void; preview?: boolean }) {
+  const dlg = useDialog(onClose);
   const groups = useSummaryGroups();
   const { prefs } = useStore();
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 20, background: 'color-mix(in srgb, var(--color-sidebar) 72%, transparent)' }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="Riepilogo all'apertura" className="dialog" style={{ width: 'min(520px,100%)', maxHeight: '100%', overflow: 'hidden', padding: 0, gap: 0 }}>
+      <div ref={dlg} role="dialog" aria-modal="true" aria-label="Riepilogo all'apertura" className="dialog" style={{ width: 'min(520px,100%)', maxHeight: '100%', overflow: 'hidden', padding: 0, gap: 0 }}>
         <Corners size={34} inset={5} />
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, padding: 'var(--space-4)' }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>

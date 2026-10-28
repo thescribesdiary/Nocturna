@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { ACT_KIND, Rec, isDone, visibleCols } from '../data/sections';
 import { useStore } from '../data/store';
 import { useTaskActions } from '../data/actions';
 import { DAYS, Field, KindDef, Opt, getP, optLabel, setP } from '../data/schema';
 import { QuickDates, pill } from './ui';
 import { Corners } from './Ornaments';
+import { useDialog } from './useDialog';
 import { PlanEditor, PlanRow, initPlan, savePlan } from './PlanEditor';
 
 const META = ['id', 'createdAt', 'updatedAt', 'notifyAt', 'notifyQueue', 'notifyKinds', 'notifiedAt', 'deletedAt'];
@@ -40,12 +41,14 @@ export function resizeImage(file: File, w: number, square = false): Promise<stri
   });
 }
 
-export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete, top, onDraft }: {
+export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete, top, onDraft, openInSection }: {
   def: KindDef; rec: Partial<Rec>; mobile: boolean; onClose: () => void; onSaved?: (id: string) => void; onDelete?: () => void;
   /** Contenuto mostrato sotto il titolo (es. la scelta dell'area nel Calendario generale). */
   top?: React.ReactNode;
   /** Riceve la bozza a ogni modifica, per conservare il titolo se si cambia area. */
   onDraft?: (f: Rec) => void;
+  /** Dal Calendario generale: apre l'elemento nella sua sezione (dettaglio con libro o progetto collegato). */
+  openInSection?: () => void;
 }) {
   const st = useStore();
   const act = useTaskActions();
@@ -62,17 +65,22 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete, top, 
   const [open, setOpen] = useState<Record<number, boolean>>({});
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  const dlg = useDialog(() => close(), [mobile]); // due contenitori diversi per telefono e desktop
+  const formId = useId();
   const set = (k: string, v: any) => {
     setF((x) => {
       let n = setP(x, k, v);
       // «Volume completato» e «Volume annullato» si escludono a vicenda.
       if (k === 'volDone' && v) n = { ...n, volCancelled: false };
       if (k === 'volCancelled' && v) n = { ...n, volDone: false };
-      onDraft?.(n);
       return n;
     });
     setConfirmClose(false);
   };
+  // La bozza va al componente padre dopo l'aggiornamento, non dentro la funzione di setState
+  // (React può eseguirla due volte e non deve aggiornare altri componenti durante il calcolo).
+  const first = useRef(true);
+  useEffect(() => { if (first.current) { first.current = false; return; } onDraft?.(f); }, [f]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const close = () => {
     if (JSON.stringify(f) + JSON.stringify(plan) !== orig && !confirmClose) { setConfirmClose(true); return; }
@@ -112,12 +120,22 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete, top, 
   const renderField = (fl: Field) => {
     if (fl.show && !fl.show(f)) return null;
     const v = getP(f, fl.k);
-    const wrap = (el: React.ReactNode) => (
-      <div key={fl.k} className="field" style={{ gridColumn: fl.half ? undefined : '1 / -1', margin: 0, minWidth: 0 }}>
-        <label style={lab}>{fl.labelFn ? fl.labelFn(f) : fl.label}</label>{el}
-        {fl.hint && <span style={{ fontSize: 12.5, color: 'var(--color-neutral-400)' }}>{fl.hint}</span>}
-      </div>
-    );
+    // Etichetta collegata al campo: «for» per input/select/textarea, «aria-labelledby» per i gruppi di pulsanti.
+    const fid = `${formId}-${fl.k.replace(/[^A-Za-z0-9_-]/g, '_')}`, lid = fid + '-etichetta', hid = fid + '-nota';
+    const wrap = (el: React.ReactNode, labelled = false) => {
+      // labelled = il campo dentro `el` ha già id={fid} (es. data con le scorciatoie «oggi/domani»).
+      const native = !labelled && React.isValidElement(el) && typeof el.type === 'string' && ['input', 'select', 'textarea'].includes(el.type);
+      const group = React.isValidElement(el) && el.type === 'div';
+      const extra: Record<string, string> = native ? { id: fid } : group ? { role: 'group', 'aria-labelledby': lid } : {};
+      if (fl.hint && (native || group)) extra['aria-describedby'] = hid;
+      const ctl = native || group ? React.cloneElement(el as React.ReactElement<any>, extra) : el;
+      return (
+        <div key={fl.k} className="field" style={{ gridColumn: fl.half ? undefined : '1 / -1', margin: 0, minWidth: 0 }}>
+          <label id={lid} htmlFor={native || labelled ? fid : undefined} style={lab}>{fl.labelFn ? fl.labelFn(f) : fl.label}</label>{ctl}
+          {fl.hint && <span id={hid} style={{ fontSize: 12.5, color: 'var(--color-neutral-400)' }}>{fl.hint}</span>}
+        </div>
+      );
+    };
     const pills = (opts: Opt[], on: (o: Opt) => boolean, click: (o: Opt) => void, icon = true) => (
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {opts.map((o) => (
@@ -133,7 +151,7 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete, top, 
       case 'textarea':
         return wrap(<textarea className="input" value={v ?? ''} placeholder={fl.ph} onChange={(e) => set(fl.k, e.target.value)} style={{ minHeight: 76, resize: 'vertical', fontSize: mobile ? 16 : 15, fontFamily: 'inherit', lineHeight: 1.45 }} />);
       case 'date': case 'time': case 'month':
-        return wrap(<><input className="input" type={fl.t} value={v ?? ''} onChange={(e) => set(fl.k, e.target.value)} style={big} />{fl.t === 'date' && QUICK.includes(fl.k) && <QuickDates big={mobile} onPick={(k) => set(fl.k, k)} />}</>);
+        return wrap(<><input id={fid} className="input" type={fl.t} value={v ?? ''} onChange={(e) => set(fl.k, e.target.value)} style={big} />{fl.t === 'date' && QUICK.includes(fl.k) && <QuickDates big={mobile} onPick={(k) => set(fl.k, k)} />}</>, true);
       case 'choice':
         return wrap(pills(optsOf(fl), (o) => v === o[0], (o) => set(fl.k, o[0])));
       case 'multi': {
@@ -241,6 +259,12 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete, top, 
   const head = (
     <div style={{ display: 'flex', alignItems: 'center' }}>
       <div className="dialog-title" style={{ flex: 1 }}>{heading}</div>
+      {openInSection && !isNew && (
+        <button className="btn btn-ghost" onClick={() => {
+          if (JSON.stringify(f) + JSON.stringify(plan) !== orig) { st.say('Salva o annulla le modifiche prima di aprire la sezione.'); return; }
+          openInSection();
+        }} style={{ minHeight: 44, fontSize: 14.5 }}><i className="ph ph-arrow-square-out" aria-hidden="true" />Apri nella sezione</button>
+      )}
       <button onClick={close} aria-label="Chiudi" style={{ width: 44, height: 44, border: 0, background: 'none', color: 'var(--color-neutral-400)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><i className="ph ph-x" style={{ fontSize: 20 }} /></button>
     </div>
   );
@@ -248,7 +272,7 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete, top, 
   if (mobile)
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', background: 'color-mix(in srgb, var(--color-sidebar) 70%, transparent)' }}>
-        <div role="dialog" aria-modal="true" aria-label={heading} style={{ maxHeight: '92%', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '22px 22px 0 0', background: 'var(--color-surface)', boxShadow: 'var(--shadow-lg)' }}>
+        <div ref={dlg} role="dialog" aria-modal="true" aria-label={heading} style={{ maxHeight: '92%', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '22px 22px 0 0', background: 'var(--color-surface)', boxShadow: 'var(--shadow-lg)' }}>
           {/* Gli angoli restano fermi sul bordo del pannello: scorre solo il contenuto. */}
           <Corners size={30} inset={8} />
           <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, padding: '10px 18px calc(env(safe-area-inset-bottom, 0px) + 24px)' }}>
@@ -259,8 +283,8 @@ export function RecordForm({ def, rec, mobile, onClose, onSaved, onDelete, top, 
       </div>
     );
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'grid', placeItems: 'center', padding: 20, background: 'color-mix(in srgb, var(--color-sidebar) 70%, transparent)' }} onKeyDown={(e) => e.key === 'Escape' && close()}>
-      <div role="dialog" aria-modal="true" aria-label={heading} className="dialog" style={{ width: 'min(560px,100%)', maxHeight: '100%', overflow: 'hidden', padding: 0, gap: 0 }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'grid', placeItems: 'center', padding: 20, background: 'color-mix(in srgb, var(--color-sidebar) 70%, transparent)' }}>
+      <div ref={dlg} role="dialog" aria-modal="true" aria-label={heading} className="dialog" style={{ width: 'min(560px,100%)', maxHeight: '100%', overflow: 'hidden', padding: 0, gap: 0 }}>
         <Corners size={36} inset={5} />
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, padding: 'var(--space-4)' }}>{head}{top}{body}{planBox}{actions}</div>
       </div>

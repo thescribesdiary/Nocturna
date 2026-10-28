@@ -53,7 +53,7 @@ function NewForm({ date, cat0, mobile, onClose }: { date: string; cat0?: Section
 }
 
 /** Apertura dei moduli dal Calendario generale: nuovo elemento o modifica di uno esistente. */
-export function useRecordEditor(mobile: boolean) {
+export function useRecordEditor(mobile: boolean, linkToSection = false) {
   const st = useStore();
   const [open, setOpen] = useState<Open | null>(null);
   const openNew = (pre: { date: string; cat?: Section }) => setOpen({ mode: 'new', ...pre });
@@ -67,6 +67,12 @@ export function useRecordEditor(mobile: boolean) {
     ? <NewForm date={open.date} cat0={open.cat} mobile={mobile} onClose={close} />
     : <RecordForm key={open.rec.id} def={kindDef(open.cat, open.kind)} rec={open.rec} mobile={mobile} onClose={close}
         top={<div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, letterSpacing: '.1em', textTransform: 'uppercase', color: catVar(open.cat) }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: catVar(open.cat) }} />{CATS[open.cat].label}</div>}
-        onDelete={() => { if (st.removeRec(open.cat, open.rec.id)) close(); }} />;
+        onDelete={() => { if (st.removeRec(open.cat, open.rec.id)) close(); }}
+        openInSection={linkToSection ? () => {
+          // Stesso meccanismo della ricerca globale: la sezione apre il dettaglio (con libro o progetto collegato).
+          try { sessionStorage.setItem('nocturna-open', JSON.stringify({ c: open.cat, kind: open.kind, id: open.rec.id })); } catch {}
+          close();
+          window.location.hash = '#/' + open.cat;
+        } : undefined} />;
   return { openNew, openEdit, dialog };
 }
