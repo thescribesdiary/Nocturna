@@ -1,0 +1,132 @@
+# Prepara un aggiornamento di Nocturna da uno zip caricato nel repository (anche dal telefono).
+# NON pubblica nulla: estrae lo zip in un branch e apre una Pull Request da controllare.
+# La pubblicazione parte solo quando fai il merge della Pull Request su main.
+name: Prepara aggiornamento da zip
+
+on:
+  push:
+    branches: ['**']
+    paths: ['*.zip']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aggiorna-da-zip-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # 1. Verifica: estrae lo zip in una copia e prova a compilarlo.
+  #    Nessun secret, token in sola lettura e non salvato su disco.
+  verifica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      zip: ${{ steps.zip.outputs.zip }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Trova lo zip
+        id: zip
+        run: |
+          shopt -s nullglob
+          zips=( *.zip )
+          if [ ${#zips[@]} -eq 0 ]; then
+            # Succede dopo il merge: la Pull Request toglie lo zip da main. Nulla da fare.
+            echo "Nessuno zip da preparare."
+            echo "zip=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ ${#zips[@]} -gt 1 ]; then
+            echo "::error::Serve un solo zip nella cartella principale del repository (trovati: ${#zips[@]})."
+            exit 1
+          fi
+          if ! [[ "${zips[0]}" =~ ^[A-Za-z0-9][A-Za-z0-9._\ -]{0,99}\.zip$ ]]; then
+            echo "::error::Nome dello zip non ammesso: usa solo lettere, cifre, spazi, punti, trattini e trattini bassi."
+            exit 1
+          fi
+          echo "zip=${zips[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Estrai lo zip in una copia di prova
+        if: steps.zip.outputs.zip != ''
+        env:
+          ZIP: ${{ steps.zip.outputs.zip }}
+        run: |
+          prova="$RUNNER_TEMP/prova"
+          mkdir -p "$prova"
+          git archive HEAD | tar -x -C "$prova"
+          rm -f "$prova"/*.zip
+          python3 -I .github/scripts/estrai_zip.py "$ZIP" "$prova"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.zip.outputs.zip != ''
+        with:
+          node-version: 22
+
+      - name: Compila la copia di prova (senza secret)
+        if: steps.zip.outputs.zip != ''
+        working-directory: ${{ runner.temp }}/prova
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+
+  # 2. Proponi: ripete l'estrazione (solo Python, nessun codice dello zip viene eseguito),
+  #    crea un branch e apre la Pull Request. Nessun secret Firebase.
+  proponi:
+    needs: verifica
+    if: needs.verifica.outputs.zip != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write # solo per avviare «Controlli» sul nuovo branch
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Estrai lo zip e crea il branch di aggiornamento
+        id: branch
+        env:
+          ZIP: ${{ needs.verifica.outputs.zip }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_NAME" = "main" ]; then
+            nome=$(printf '%s' "${ZIP%.zip}" | tr -c 'A-Za-z0-9_-' '-' | tr -s '-' | sed 's/^-*//; s/-*$//' | cut -c1-40)
+            branch="aggiornamento/${nome:-zip}-${GITHUB_RUN_ID}"
+            git switch -c "$branch"
+          else
+            branch="$REF_NAME"
+          fi
+          python3 -I .github/scripts/estrai_zip.py "$ZIP" .
+          git rm -q --cached -- ./*.zip
+          rm -f -- ./*.zip
+          git config user.name "Nocturna"
+          git config user.email "nocturna@users.noreply.github.com"
+          git add -A
+          git commit -qm "Aggiornamento di Nocturna da $ZIP"
+          git push -q origin "HEAD:refs/heads/$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Apri la Pull Request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+          ZIP: ${{ needs.verifica.outputs.zip }}
+        run: |
+          link="https://github.com/$GITHUB_REPOSITORY/compare/main...$BRANCH?expand=1"
+          # I push fatti dal bot non avviano altri workflow: «Controlli» va avviato esplicitamente.
+          gh workflow run controlli.yml --ref "$BRANCH" || echo "::warning::Non riesco ad avviare «Controlli»: avvialo a mano da Actions sul branch $BRANCH."
+          if [ -n "$(gh pr list --head "$BRANCH" --base main --json number --jq '.[].number')" ]; then
+            echo "La Pull Request per $BRANCH esiste già." | tee -a "$GITHUB_STEP_SUMMARY"
+          elif gh pr create --base main --head "$BRANCH" --title "Aggiornamento di Nocturna da $ZIP" \
+              --body "Creata automaticamente da uno zip. La compilazione di prova è riuscita. Controlla le modifiche in **Files changed**: la pubblicazione parte solo dopo il merge."; then
+            echo "Pull Request aperta per $BRANCH." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Non riesco ad aprire la Pull Request in automatico. Aprila da qui: $link"
+            echo "Apri la Pull Request da qui: $link" >> "$GITHUB_STEP_SUMMARY"
+          fi

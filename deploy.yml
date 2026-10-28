@@ -1,0 +1,67 @@
+# Pubblica Nocturna su Firebase (app, regole e indici).
+# Parte solo dal branch main: dopo il merge di una Pull Request o a mano da Actions → Run workflow.
+# Gli zip caricati NON vengono più pubblicati direttamente: li prepara «Prepara aggiornamento da zip»
+# aprendo una Pull Request da controllare. Vedi README, «Aggiornare l'app».
+name: Pubblica Nocturna
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['*.zip']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Ambiente «production»: su GitHub puoi limitarlo al branch main e chiedere un'approvazione (vedi README).
+    environment: production
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Blocca gli zip non ancora revisionati
+        run: |
+          shopt -s nullglob
+          zips=( *.zip )
+          if [ ${#zips[@]} -gt 0 ]; then
+            echo "::error::Nel branch main c'è uno zip non estratto. Usa la Pull Request aperta da «Prepara aggiornamento da zip»."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Installa le dipendenze (senza script di installazione)
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Controlla la configurazione e genera le regole di sicurezza
+        env:
+          ALLOWED_EMAIL: ${{ secrets.ALLOWED_EMAIL }}
+          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG }}
+        run: node scripts/prepare-deploy.mjs
+
+      - name: Compila l'app
+        run: npm run build
+
+      - name: Pubblica su Firebase (app, regole e indici)
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then echo "::error::Manca il secret FIREBASE_SERVICE_ACCOUNT (vedi README)."; exit 1; fi
+          umask 077
+          sa="$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$sa"' EXIT
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$sa"
+          export GOOGLE_APPLICATION_CREDENTIALS="$sa"
+          npx --no-install firebase deploy --only hosting,firestore:rules,firestore:indexes --project "$FIREBASE_PROJECT" --non-interactive --force
