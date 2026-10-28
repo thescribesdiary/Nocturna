@@ -1,0 +1,61 @@
+# Controlli automatici sulle Pull Request: test dell'estrazione degli zip, verifica dei workflow,
+# test dell'app, test delle regole Firestore (emulatore locale, progetto demo), TypeScript e build.
+# Non usa secret, non si collega al progetto Firebase reale e non pubblica nulla.
+# Ogni passo si ferma al primo errore: un test fallito fa fallire l'intero controllo.
+name: Controlli
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlli-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  controlli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Test dell'estrazione degli zip
+        run: python3 -I .github/scripts/test_estrai_zip.py
+
+      - name: Verifica dei workflow (actionlint)
+        run: |
+          url=https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" "$url"
+          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" .github/workflows/*.yml setup/*.yml
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      # L'emulatore Firestore di firebase-tools 14 richiede Java 21 o successivo.
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Installa le dipendenze (riproducibile, senza script di installazione)
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Test unitari
+        run: npm test
+
+      - name: Test delle regole Firestore (emulatore, progetto demo, nessun dato reale)
+        run: npm run test:rules
+
+      - name: Controllo dei tipi (TypeScript)
+        run: npx --no-install tsc --noEmit
+
+      - name: Build di produzione (senza secret)
+        run: npm run build
